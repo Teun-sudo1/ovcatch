@@ -105,6 +105,8 @@ routing:
   engine: valhalla
   valhalla_url: http://localhost:8002
   timeout_s: 60
+  # Gelijktijdige isochroon-verzoeken per analyse
+  parallel_requests: 8
   # Alleen voor euclid: omrijfactor (netwerk/hemelsbreed) en busnelheid
   euclid_detour_factor: 1.3
   euclid_bus_kmh: 30

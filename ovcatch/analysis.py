@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import geopandas as gpd
@@ -147,11 +148,20 @@ def analyse(scenario: dict, cfg: Config, router: Router, store: DataStore, with_
 
     stop_xy = np.array([lonlat_to_rd(float(s["lon"]), float(s["lat"])) for s in stops])
 
-    # Isochronen
+    # Isochronen (parallel: bij Valhalla is dit het grootste deel van de rekentijd)
+    jobs = [(mode, si) for mode in thresholds for si in range(len(stops))]
+
+    def fetch(job):
+        mode, si = job
+        return router.isochrones(float(stops[si]["lon"]), float(stops[si]["lat"]), mode, thresholds[mode])
+
+    workers = max(1, int(cfg["routing"].get("parallel_requests", 8)))
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        fetched = dict(zip(jobs, ex.map(fetch, jobs)))
     iso_rows = []
     for mode, ths in thresholds.items():
         for si, s in enumerate(stops):
-            isos = router.isochrones(float(s["lon"]), float(s["lat"]), mode, ths)
+            isos = fetched[(mode, si)]
             for ti, t in enumerate(ths):
                 g = isos[float(t)]
                 iso_rows.append({"mode": mode, "stop": si, "band": ti, "threshold": t, "geom_wgs": g, "geometry": to_rd(g)})

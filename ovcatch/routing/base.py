@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,7 +62,10 @@ class CachedRouter(Router):
             return {float(d): shape(g) for d, g in data.items()}
         res = self.inner.isochrones(lon, lat, mode, distances_m)
         data = {str(d): mapping(g) for d, g in res.items()}
-        f.write_text(json.dumps(data))
+        # atomair schrijven: analyses halen isochronen parallel op
+        tmp = f.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(data))
+        tmp.replace(f)
         self._mem[k] = data
         return res
 

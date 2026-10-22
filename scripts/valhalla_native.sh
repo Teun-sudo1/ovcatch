@@ -4,7 +4,8 @@
 #   scripts/valhalla_native.sh serve   # server op http://localhost:8002 (voorgrond)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BIN=${BIN:-.venv/bin}
+BIN=${BIN:-$PWD/.venv/bin}
+export PATH="$BIN:$PATH"  # de pyvalhalla-launchers zoeken de executables via PATH
 DIR=data/valhalla
 CONF=$DIR/valhalla.json
 
@@ -19,7 +20,7 @@ case "${1:-}" in
       --mjolnir-tile-extract "$DIR/tiles.tar" \
       --mjolnir-admin "$DIR/admins.sqlite" \
       --mjolnir-timezone "$DIR/timezones.sqlite" \
-      --httpd-service-listen tcp://*:8002 \
+      --httpd-service-listen "tcp://*:8002" \
       --service-limits-isochrone-max-distance-contour 25 \
       > "$CONF"
     "$BIN/valhalla_build_admins" -c "$CONF" "${pbfs[@]}"
