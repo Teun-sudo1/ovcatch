@@ -54,3 +54,11 @@ def test_search_matches_word_start():
     assert [r["route_id"] for r in f.search_routes("huizen")] == ["a"]
     assert [r["route_id"] for r in f.search_routes("hilv")] == ["a"]
     assert [r["route_id"] for r in f.search_routes("438")] == ["b"]
+
+
+def test_same_name_platforms_across_junction_merge(cfg):
+    """Echte casus (Huizen, Aristoteleslaan; Hilversum, Orionlaan): perrons per richting ~180–210 m uiteen."""
+    s0 = [{"stop_id": "a", "name": "Orionlaan", "lon": 5.1900, "lat": 52.2300}]
+    s1 = [{"stop_id": "b", "name": "Orionlaan", "lon": 5.1930, "lat": 52.2300}]  # ~205 m oostelijk
+    out = merge_directions(s0, s1, [[5.18, 52.23], [5.20, 52.23]], cfg["line"]["merge_distance_m"])
+    assert len(out) == 1 and out[0]["members"] == ["a", "b"]

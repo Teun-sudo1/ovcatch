@@ -115,7 +115,7 @@ routing:
 
 line:
   # Haltes van beide richtingen samenvoegen als ze binnen deze afstand liggen
-  merge_distance_m: 150
+  merge_distance_m: 250
   # Busachtige route_types in GTFS
   bus_route_types: [3, 700, 701, 702, 704, 705, 711, 712, 715]
 

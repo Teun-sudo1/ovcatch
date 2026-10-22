@@ -457,7 +457,7 @@
     const msgs = [];
     if (S.cfg.demo) msgs.push("<b>DEMO</b> — synthetische data, niet echt.");
     if (!S.cfg.data_available) msgs.push("Geen verwerkte adresdata gevonden. Draai <code>make data</code>.");
-    if (!rt.approximate && !rt.ok) msgs.push(`Valhalla niet bereikbaar op ${rt.url}. Draait <code>docker compose up valhalla</code>?`);
+    if (!rt.approximate && !rt.ok) msgs.push(`Valhalla niet bereikbaar op ${rt.url}. Start met <code>make valhalla</code>.`);
     if (msgs.length) { $("banner").innerHTML = msgs.join("<br>"); $("banner").classList.remove("hidden"); }
     if (S.cfg.bbox) map.fitBounds([[S.cfg.bbox[0], S.cfg.bbox[1]], [S.cfg.bbox[2], S.cfg.bbox[3]]], { duration: 0 });
 
@@ -506,7 +506,13 @@
       const n = $("scenarioSelect").value; if (!n) return;
       try {
         const sc = await api(`/api/scenarios/${encodeURIComponent(n)}`);
-        if (as === "base") S.baseline = sc; else S.variant = sc;
+        if (as === "base") {
+          S.baseline = sc;
+          if (!S.variant) S.variant = { ...clone(sc), name: "Variant" };
+        } else {
+          S.variant = sc;
+          if (!S.baseline) S.baseline = clone(sc);
+        }
         renderBaseline(); renderVariant(); fitTo(sc); markStale();
       } catch (e) { status(e.message, true); }
     };
