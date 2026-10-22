@@ -107,7 +107,15 @@
       map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; popup.remove(); });
       map.on("click", layer, (e) => { if (!S.edit) selectStop(e.features[0].properties.i, true); });
     }
-    map.on("click", (e) => { if (S.edit) window.OVCEditor.onMapClick(e); });
+    map.on("click", (e) => {
+      if (S.edit) { window.OVCEditor.onMapClick(e); return; }
+      // klik naast een halte = halte deselecteren
+      if (S.stop != null && !map.queryRenderedFeatures(e.point, { layers: ["stops", "line-stops"] }).length) clearStop();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || S.edit || e.target.tagName === "INPUT") return;
+      if (S.stop != null) clearStop(); else if (S.line != null) clearLine();
+    });
     window.OVCEditor.init({
       S, map, setData, decodePolyline, isoTile, renderDetail, esc, nf, nf1, fmtTh, MODE_ADJ, MODE_LABEL, DATA,
       color: (i) => PALETTE[i % PALETTE.length],
@@ -235,6 +243,12 @@
     drawIso();
   }
 
+  function clearStop() {
+    S.stop = null;
+    setData("sel", null); setData("iso", null);
+    setHashState(); renderDetail();
+  }
+
   function clearLine() {
     S.line = null;
     setData("line", null); setData("line-stops", null);
@@ -329,6 +343,7 @@
     if (S.stop != null) {
       const s = S.stops[S.stop];
       h += `${S.line != null ? '<div class="res-h" style="margin-top:22px">Geselecteerde halte</div>' : ""}
+        <button class="back" id="closeStop" title="Of klik naast een halte op de kaart, of druk Esc">× Halte sluiten</button>
         <h2>${esc(s[0])}</h2>
         ${kpis(vals(s[3], S.mode, S.th), within)}
         <div class="res-h">Alle afstanden</div>${thTable(s[3])}
@@ -339,6 +354,7 @@
     h += `<p class="note">* Ruwe schatting: m² BAG-gebruiksoppervlak ÷ aanname m² per arbeidsplaats.</p>`;
     el.innerHTML = h;
     const cl = $("closeLine"); if (cl) cl.onclick = clearLine;
+    const cs = $("closeStop"); if (cs) cs.onclick = clearStop;
     const ed = $("editLine"); if (ed) ed.onclick = () => window.OVCEditor.start(S.line);
     el.querySelectorAll("[data-line]").forEach((b) => (b.onclick = () => selectLine(Number(b.dataset.line), true)));
     el.querySelectorAll("tr[data-stop]").forEach((r) => (r.onclick = () => selectStop(Number(r.dataset.stop), true, true)));
