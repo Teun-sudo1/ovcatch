@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OV-catchment</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <aside id="panel">
+    <header class="brand">
+      <div>
+        <h1>OV-catchment</h1>
+        <p class="sub">Haltebereik van een buslijn vergelijken</p>
+      </div>
+      <span id="routerBadge" class="badge">…</span>
+    </header>
+    <div id="banner" class="banner hidden"></div>
+
+    <section>
+      <h2><span class="step">1</span> Lijn laden</h2>
+      <label class="field">Feed
+        <select id="feedSelect"></select>
+      </label>
+      <label class="field">Zoek lijn (nummer, naam, vervoerder)
+        <input id="routeSearch" type="search" placeholder="bijv. 320 of Huizen" autocomplete="off" />
+      </label>
+      <ul id="routeList" class="list"></ul>
+      <div class="loaded">
+        <div><span class="dot base"></span><b>Origineel:</b> <span id="baseName" class="muted">—</span></div>
+        <div><span class="dot var"></span><b>Variant:</b> <span id="varName" class="muted">—</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="step">2</span> Variant bewerken</h2>
+      <div class="tools" role="toolbar">
+        <button data-tool="move" class="tool active" title="Haltes en via-punten verslepen; dubbelklik op halte = hernoemen">Verslepen</button>
+        <button data-tool="add" class="tool" title="Klik op de kaart om een halte toe te voegen">+ Halte</button>
+        <button data-tool="via" class="tool" title="Klik op de kaart om de route via dat punt te leiden">+ Via-punt</button>
+        <button data-tool="delete" class="tool" title="Klik op een halte of via-punt om te verwijderen">Verwijderen</button>
+      </div>
+      <p class="hint" id="toolHint">Sleep haltes (genummerd) of via-punten (wit). Dubbelklik op een halte om te hernoemen.</p>
+      <div class="row">
+        <button id="resetVariant" class="ghost">Reset naar origineel</button>
+        <button id="swapBtn" class="ghost" title="Variant wordt origineel en omgekeerd">Wissel</button>
+      </div>
+      <div class="row">
+        <input id="scenarioName" placeholder="Scenarionaam" />
+        <button id="saveScenario">Opslaan</button>
+      </div>
+      <div class="row">
+        <select id="scenarioSelect"><option value="">Scenario laden…</option></select>
+        <button id="loadAsVariant" class="ghost">Als variant</button>
+        <button id="loadAsBase" class="ghost">Als origineel</button>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="step">3</span> Analyse</h2>
+      <div class="row">
+        <div class="seg" id="modeSeg">
+          <button data-mode="walk" class="active">Lopen</button>
+          <button data-mode="bike">Fietsen</button>
+        </div>
+        <div class="seg" id="thSeg"></div>
+      </div>
+      <div class="row">
+        <button id="runBtn" class="primary">Bereken catchment</button>
+        <label class="check"><input type="checkbox" id="autoRun" /> automatisch</label>
+      </div>
+      <div class="row small">
+        <label class="check"><input type="checkbox" id="showIso" checked /> isochronen</label>
+        <label class="check"><input type="checkbox" id="showBaseIso" /> isochronen origineel</label>
+        <label class="check"><input type="checkbox" id="showPts" checked /> adressen</label>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="results"></div>
+    </section>
+
+    <footer class="foot">
+      Bronnen: BAG (Kadaster, CC0), CBS vierkant- en buurtstatistiek (CC-BY), OpenStreetMap (ODbL), GTFS (OVapi), achtergrond PDOK BRT.
+      Inwoners per adres zijn een <i>schatting</i> (disaggregatie); arbeidsplaatsen een <i>ruwe schatting</i> o.b.v. m².
+    </footer>
+  </aside>
+  <main id="map"></main>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(.venv/bin/pip:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(du:*)",
+      "Bash(df:*)",
+      "Bash(unzip:*)",
+      "Bash(ogrinfo:*)"
+    ]
+  }
+}

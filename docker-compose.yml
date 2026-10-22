@@ -1,0 +1,33 @@
+# Valhalla (routing) + API/web.
+#   docker compose up -d valhalla      # eerste keer: bouwt routing-tiles uit data/valhalla/*.osm.pbf (kan lang duren)
+#   docker compose up -d api           # web-app op http://localhost:8000
+services:
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    # Apple Silicon: als er geen arm64-image is, zet deze regel aan (vereist Rosetta in Docker Desktop)
+    # platform: linux/amd64
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./data/valhalla:/custom_files
+    environment:
+      - use_tiles_ignore_pbf=True
+      - build_elevation=False
+      - build_admins=True
+      - build_time_zones=True
+      - serve_tiles=True
+    restart: unless-stopped
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./config.demo.yaml:/app/config.demo.yaml:ro
+    environment:
+      - VALHALLA_URL=http://valhalla:8002
+      # - OVCATCH_CONFIG=/app/config.demo.yaml   # demo-modus
+    depends_on:
+      - valhalla

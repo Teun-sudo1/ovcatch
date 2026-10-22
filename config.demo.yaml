@@ -1,0 +1,9 @@
+# Demo-configuratie: synthetische data + benaderende router (cirkels).
+# Gebruik: OVCATCH_CONFIG=config.demo.yaml  (of `make demo`)
+extends: config.yaml
+data_dir: data/demo
+region:
+  name: demo
+  bbox_wgs84: null
+routing:
+  engine: euclid

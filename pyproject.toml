@@ -1,0 +1,13 @@
+[project]
+name = "ovcatch"
+version = "0.1.0"
+description = "OV-halte catchment tool: bereik van bushaltes en lijnvarianten vergelijken met open data (BAG, CBS, OSM, GTFS)"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["ovcatch*"]

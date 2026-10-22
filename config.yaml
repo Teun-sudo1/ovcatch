@@ -1,0 +1,119 @@
+# OV-catchment tool — hoofdconfiguratie
+# Paden zijn relatief t.o.v. de projectmap.
+
+data_dir: data
+
+region:
+  # Naam van de regio, wordt gebruikt in bestandsnamen.
+  name: gooi
+  # Begrenzing in WGS84 [min_lon, min_lat, max_lon, max_lat].
+  # Ontwikkelen/testen: Gooi + omgeving. Voor heel NL: zet op null.
+  bbox_wgs84: [5.05, 52.17, 5.45, 52.40]
+  # OSM-extract (Geofabrik). Voor heel NL: .../europe/netherlands-latest.osm.pbf
+  osm_pbf_url: https://download.geofabrik.de/europe/netherlands/noord-holland-latest.osm.pbf
+
+sources:
+  # BAG GeoPackage (PDOK, landelijk, ~7 GB). Wordt bij inlezen op region.bbox geknipt.
+  bag_gpkg_url: https://service.pdok.nl/lv/bag/atom/downloads/bag-light.gpkg
+  # CBS vierkantstatistieken 100 m (zip met gpkg). Controleer op cbs.nl of er een nieuwere jaargang is.
+  cbs_vk100_url: https://download.cbs.nl/vierkant/100/2026-cbs_vk100_2025_v1.zip
+  # CBS wijken en buurten (gpkg met kerncijfers).
+  cbs_buurten_url: https://service.pdok.nl/cbs/wijkenbuurten/2025/atom/downloads/wijkenbuurten_2025.gpkg
+  cbs_buurten_layer: buurten
+  # GTFS Nederland (OVapi). Gearchiveerde feeds kun je handmatig in data/gtfs/ zetten.
+  gtfs_url: https://gtfs.ovapi.nl/nl/gtfs-nl.zip
+
+# Kolomnamen verschillen per jaargang; de eerste kandidaat die bestaat wordt gebruikt.
+columns:
+  bag_gebruiksdoel: [gebruiksdoel]
+  bag_oppervlakte: [oppervlakte]
+  bag_status: [status]
+  bag_id: [identificatie, rdf_seealso]
+  cbs_vk_inwoners: [aantal_inwoners, INWONER]
+  cbs_vk_woningen: [aantal_woningen, WONING]
+  cbs_buurt_code: [buurtcode, BU_CODE]
+  cbs_buurt_naam: [buurtnaam, BU_NAAM]
+  cbs_buurt_inwoners: [aantal_inwoners, AANT_INW]
+  cbs_buurt_woningen: [woningvoorraad, aantal_woningen, WONINGEN]
+
+bag:
+  # Alleen verblijfsobjecten met deze status tellen mee.
+  statuses_in_use:
+    - Verblijfsobject in gebruik
+    - Verblijfsobject in gebruik (niet ingemeten)
+    - Verbouwing verblijfsobject
+  # Ligplaatsen (woonboten) en standplaatsen (woonwagens) als woning meetellen.
+  include_lig_standplaats: true
+  lig_standplaats_default_m2: 60
+
+disaggregation:
+  # area = naar rato van oppervlakte, count = gelijk per woning, mix = gewogen mix
+  weight: area
+  mix_alpha: 0.5
+  # Oppervlakte wordt geknipt tot dit bereik vóór weging (uitschieters dempen).
+  area_clip_m2: [20, 400]
+  # Fallback als ook de buurt geheim is: landelijke gemiddelde huishoudensgrootte.
+  national_persons_per_dwelling: 2.1
+  validation:
+    tolerance: 0.10
+    min_share_within: 0.90
+
+# BAG-gebruiksdoel -> categorie. Oppervlakte van een object met meerdere
+# gebruiksdoelen wordt gelijk over de doelen verdeeld.
+categories:
+  woonfunctie: woon
+  winkelfunctie: winkel
+  kantoorfunctie: kantoor
+  industriefunctie: industrie
+  onderwijsfunctie: onderwijs
+  gezondheidszorgfunctie: zorg
+  bijeenkomstfunctie: bijeenkomst
+  logiesfunctie: logies
+  sportfunctie: sport
+  celfunctie: overig
+  overige gebruiksfunctie: overig
+
+# Ruwe schatting arbeidsplaatsen: m² gebruiksoppervlak per arbeidsplaats.
+# Dit is een AANNAME; wordt in UI en export als "schatting" gelabeld.
+jobs_m2_per_job:
+  winkel: 50
+  kantoor: 25
+  industrie: 100
+  onderwijs: 60
+  zorg: 50
+  bijeenkomst: 80
+  logies: 100
+  sport: 150
+
+# OSM-voorzieningen: categorie -> lijst van "key=value" tags
+amenities:
+  onderwijs: [amenity=school, amenity=kindergarten, amenity=college, amenity=university]
+  zorg: [amenity=doctors, amenity=clinic, amenity=hospital, amenity=pharmacy, amenity=dentist, healthcare=centre]
+  supermarkt: [shop=supermarket]
+  sport: [leisure=sports_centre, leisure=sports_hall, leisure=fitness_centre, leisure=swimming_pool]
+  gemeenschap: [amenity=library, amenity=community_centre, amenity=townhall]
+
+thresholds:
+  walk: [400, 800, 1200]
+  bike: [1500, 3000]
+
+routing:
+  # valhalla = echte netwerkafstand; euclid = cirkels (alleen demo/tests/noodgeval)
+  engine: valhalla
+  valhalla_url: http://localhost:8002
+  timeout_s: 60
+  # Alleen voor euclid: omrijfactor (netwerk/hemelsbreed) en busnelheid
+  euclid_detour_factor: 1.3
+  euclid_bus_kmh: 30
+  # Isochroon-polygonen vereenvoudigen (meter)
+  generalize_m: 10
+
+line:
+  # Haltes van beide richtingen samenvoegen als ze binnen deze afstand liggen
+  merge_distance_m: 150
+  # Busachtige route_types in GTFS
+  bus_route_types: [3, 700, 701, 702, 704, 705, 711, 712, 715]
+
+api:
+  # Max aantal adrespunten dat naar de kaart gestuurd wordt
+  max_points: 25000
