@@ -2,7 +2,7 @@ PY ?= python3
 VENV ?= .venv
 BIN = $(VENV)/bin
 
-.PHONY: setup test demo serve-demo data download prepare gtfs valhalla valhalla-build valhalla-serve valhalla-logs serve up
+.PHONY: setup test demo serve-demo data download prepare gtfs valhalla valhalla-build valhalla-serve valhalla-logs serve up web-export site serve-site deploy-site
 
 setup:            ## virtuele omgeving + dependencies
 	$(PY) -m venv $(VENV) && $(BIN)/pip install -U pip && $(BIN)/pip install -r requirements.txt
@@ -51,3 +51,15 @@ serve:            ## web-app lokaal (Valhalla via localhost:8002)
 
 up:               ## alles in Docker
 	docker compose up -d --build
+
+web-export:       ## alle bushaltes/-lijnen vooraf berekenen voor de webviewer (Valhalla moet draaien)
+	$(BIN)/python -m ovcatch web-export --out data/web
+
+site:             ## viewer + geëxporteerde data samenvoegen in data/site
+	rm -rf data/site && mkdir -p data/site && cp viewer/* data/site/ && cp -R data/web data/site/data
+
+serve-site: site  ## webviewer lokaal bekijken op http://localhost:8001
+	cd data/site && $(abspath $(BIN))/python -m http.server 8001
+
+deploy-site: site ## webviewer publiceren op GitHub Pages (gh-pages-branch)
+	scripts/deploy_site.sh

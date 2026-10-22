@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Haltebereik NL</title>
+  <meta name="description" content="Hoeveel inwoners, woningen, banen en voorzieningen liggen binnen loop- en fietsafstand van elke bushalte en buslijn in Nederland? Vooraf berekend met open data." />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside id="panel">
+    <header>
+      <h1>Haltebereik NL</h1>
+      <p class="sub">Wat ligt er binnen bereik van elke bushalte en buslijn?</p>
+    </header>
+
+    <section>
+      <label class="field">Zoek een lijn of halte
+        <input id="search" type="search" placeholder="bijv. 100, Huizen of Utrecht Centraal" autocomplete="off" />
+      </label>
+      <ul id="results" class="list"></ul>
+      <div class="row">
+        <div class="seg" id="modeSeg"></div>
+        <div class="seg" id="thSeg"></div>
+      </div>
+      <div id="legend" class="legend"></div>
+    </section>
+
+    <section id="detail">
+      <p class="muted" id="intro">Klik op een halte op de kaart of zoek een lijn. Haltes zijn gekleurd naar het aantal inwoners binnen de gekozen afstand.</p>
+    </section>
+
+    <footer class="foot">
+      <p><b>Methode.</b> Bereik over het weg- en padennetwerk (Valhalla, OpenStreetMap). <b>Per halte</b> telt alles binnen bereik (bruto; buurhaltes overlappen). <b>Per lijn</b> telt elk adres één keer (uniek). Inwoners zijn een <i>schatting</i>: CBS 100m-vierkanten verdeeld over BAG-woningen. Arbeidsplaatsen zijn een <i>ruwe schatting</i> uit m² BAG-gebruiksoppervlak. Lijnen volgen het meest gereden ritpatroon.</p>
+      <p><b>Bronnen.</b> BAG (Kadaster, CC0) · CBS Vierkantstatistieken en Wijken en Buurten (CC-BY 4.0) · OpenStreetMap (ODbL) · GTFS NL (OVapi) · Achtergrond PDOK BRT.</p>
+      <p id="meta" class="muted"></p>
+      <p><a href="https://github.com/Teun-sudo1/ovcatch">Broncode en eigen analyses (ovcatch)</a></p>
+    </footer>
+  </aside>
+  <main id="map"></main>
+  <div id="loading" class="loading">Haltes laden…</div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
