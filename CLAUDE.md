@@ -9,6 +9,7 @@ OV-catchment tool: bereik van bushaltes/lijnvarianten vergelijken met open data 
 - `ovcatch/routing/` — `valhalla.py` (echt), `euclid.py` (benadering voor demo/tests), cache
 - `ovcatch/analysis.py` — catchment per halte/lijn, toewijzing zonder dubbeltelling, vergelijking, CSV
 - `ovcatch/api/app.py` — endpoints; `web/` — UI
+- `scripts/valhalla_native.sh` — Valhalla zonder Docker (pyvalhalla), via `make valhalla`
 - `config.yaml` (echt) / `config.demo.yaml` (synthetisch, euclid-router)
 
 ## Werkafspraken

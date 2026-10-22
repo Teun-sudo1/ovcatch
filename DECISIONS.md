@@ -27,6 +27,8 @@ Format: **keuze** — reden — (alternatief).
 
 ## Bereikbaarheid
 - **Valhalla** (Docker `ghcr.io/valhalla/valhalla-scripted`): pedestrian/bicycle-isochronen met **afstandscontouren** (km); valt automatisch terug op tijdcontouren (5 km/u lopen, 15 km/u fietsen) als de server die niet kent. Bus-costing voor de lijnroute. Max. 4 contouren per verzoek → automatisch opgesplitst.
+- **Valhalla native via pyvalhalla als Docker ontbreekt** — de wheel bevat `valhalla_build_tiles` en `valhalla_service`; geen Docker Desktop nodig op macOS. Zelfde HTTP-API op :8002, dus de client is ongewijzigd. Getest: 3.9.1, afstandscontouren werken.
+- **Isochronen parallel** (`routing.parallel_requests`, standaard 8) — koude analyse van 25 haltes × 2 modi in ~3 s; cachebestanden atomair geschreven.
 - **Drempels**: lopen 400/800/1200 m, fietsen 1,5/3 km (config).
 - **Isochronen gecachet op schijf** (`data/cache/isochrones/`), sleutel = coördinaat (6 dec.) + modus + drempels.
 - **Benaderende router `euclid`** (cirkels met omrijfactor 1,3) alleen voor demo/tests of als Valhalla niet draait; de UI toont dan een waarschuwing.
@@ -38,7 +40,7 @@ Format: **keuze** — reden — (alternatief).
 
 ## Lijnmodel
 - **Representatief patroon** per route/richting = meest gereden stoppatroon (bij gelijkspel het langste).
-- **Logische haltes**: haltes van beide richtingen samengevoegd bij zelfde naam ≤ 150 m, of ≤ 40 m ongeacht naam; geordend langs de shape van richting 0. Lijnen met een lus/ring kunnen een afwijkende volgorde krijgen — controleer visueel.
+- **Logische haltes**: haltes van beide richtingen samengevoegd bij zelfde naam ≤ 250 m (`line.merge_distance_m`; 150 m bleek te krap: Huizen Aristoteleslaan 178 m, Hilversum Orionlaan 207 m), of ≤ 40 m ongeacht naam; geordend langs de shape van richting 0. Lijnen met een lus/ring kunnen een afwijkende volgorde krijgen — controleer visueel.
 - **Scenario-formaat** (JSON): `stops[]` (id, name, lon, lat, members), `vias[]` (after = index halte, lon, lat), `geometry`, `modified`, `source`, `feed`, `route_id`. Origineel ongewijzigd → GTFS-shape wordt getoond; na bewerking → Valhalla-busroute.
 - **Rijtijd** van beide scenario's via dezelfde router (appels met appels); GTFS-dienstregelingstijd van het origineel wordt apart getoond.
 

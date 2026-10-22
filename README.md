@@ -14,10 +14,13 @@ De demo gebruikt een verzonnen dorp en een benaderende router (cirkels). Bovenin
 
 ## Echte data (macOS met Docker Desktop of OrbStack)
 
-1. **Regio kiezen** in `config.yaml` → `region.bbox_wgs84` (standaard: het Gooi) en `region.osm_pbf_url` (standaard: Noord-Holland). Voor heel NL: bbox `null` en `netherlands-latest.osm.pbf`.
+1. **Regio kiezen** in `config.yaml` → `region.bbox_wgs84` (standaard: het Gooi) en `region.osm_pbf_urls` (standaard: Noord-Holland + Utrecht, want het Gooi ligt op de provinciegrens). Voor heel NL: bbox `null` en alleen `netherlands-latest.osm.pbf`; zie `PROGRESS.md`.
 2. **Data**: `make data` — downloadt BAG (~7 GB), CBS-vierkanten, CBS-buurten, OSM en GTFS NL, verwerkt alles naar `data/processed/` en indexeert GTFS.
    Validatie van de bevolkingsverdeling: `python -m ovcatch validate`.
-3. **Routing**: `make valhalla` — kopieert het OSM-extract naar `data/valhalla/` en start Valhalla. De eerste start bouwt routing-tiles (Noord-Holland: ~10–20 min; NL: langer, ≥ 8 GB RAM voor Docker). Volg met `make valhalla-logs`; klaar als `curl localhost:8002/status` antwoordt.
+3. **Routing**: `make valhalla` — start Valhalla op `localhost:8002`.
+   - **Zonder Docker** (standaard als `docker` ontbreekt): bouwt eenmalig tiles uit `data/raw/*.osm.pbf` met de `pyvalhalla`-wheel (NH + Utrecht: ~20 s) en start `valhalla_service` op de achtergrond (log: `data/valhalla/service.log`). Los: `make valhalla-build`, `make valhalla-serve`.
+   - **Met Docker**: kopieert de extracten naar `data/valhalla/` en start de container; volg met `make valhalla-logs`.
+   Klaar als `curl localhost:8002/status` antwoordt. Na een nieuwe OSM-download: `rm -rf data/valhalla` en opnieuw `make valhalla`.
 4. **App**: `make serve` → http://localhost:8000
 
 Alles in Docker kan ook: `docker compose up -d --build`.
@@ -28,6 +31,14 @@ De oorspronkelijke lijn komt uit een **gearchiveerde GTFS-feed** van vóór de o
 python -m ovcatch gtfs-index --gtfs pad/naar/gtfs-2024.zip --name nl_2024
 ```
 In de UI: kies feed `nl_2024` → lijn → **Origineel**; kies de actuele feed → zelfde lijn → **Variant**. Daarna haltes verslepen/toevoegen/verwijderen en **Bereken catchment**.
+
+### Wat anders ging dan gepland (echte data)
+- wijkenbuurten 2025 heeft nog geen woningvoorraad: de noemer voor "inwoners per woning" komt dan uit de BAG.
+- Validatie telt alleen buurten die geheel binnen de regio liggen (randbuurten zijn door de bbox afgeknipt).
+- Haltes van beide richtingen met dezelfde naam worden tot 250 m samengevoegd (perrons aan weerszijden van een kruispunt liggen soms > 150 m uit elkaar).
+- Lijnen zoeken matcht op woordbegin: "huizen" vindt Huizen, niet Enkhuizen.
+- Valhalla draait native (pyvalhalla) als Docker ontbreekt.
+Details en metingen: `PROGRESS.md`; keuzes: `DECISIONS.md`.
 
 ## CLI
 ```
