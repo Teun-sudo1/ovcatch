@@ -14,5 +14,6 @@ git -C "$TMP" init -q -b gh-pages
 git -C "$TMP" add -A
 git -C "$TMP" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" \
   commit -q -m "Webviewer: data $(date +%F) ($(git rev-parse --short HEAD))"
-git -C "$TMP" push -q -f "$REMOTE" gh-pages
+# grotere buffer: anders breekt een push van ~40 MB over HTTPS soms af
+git -C "$TMP" -c http.postBuffer=524288000 push -q -f "$REMOTE" gh-pages
 echo "Gepubliceerd naar gh-pages van $REMOTE"
