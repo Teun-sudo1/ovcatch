@@ -50,7 +50,25 @@ Tests: `make test` → 28 geslaagd (synthetische data, geen netwerk).
 - CBS (1-1-2025) loopt achter op de BAG: nieuwbouwwijken (Nobelhorst, Vogelhorst) krijgen inwoners via het buurtgemiddelde.
 - UI niet visueel in een browser getest (geen browser-tool beschikbaar); de API-flow achter elke knop is wel getest.
 
-## Heel Nederland draaien
-1. `config.yaml`: `region.bbox_wgs84: null`, `region.name: nl`, `region.osm_pbf_urls: [https://download.geofabrik.de/europe/netherlands-latest.osm.pbf]`.
-2. `make download prepare gtfs` — niet gemeten voor heel NL. Gooi (0,3 mln objecten) kostte 1,25 GB; NL heeft ~10 mln BAG-objecten, dus reken op een veelvoud. Lukt het niet in het geheugen, draai dan per provincie (bbox per provincie).
-3. `rm -rf data/valhalla && make valhalla` — tiles voor NL uit één landelijk extract; niet gemeten, verwacht minuten tot tientallen minuten.
+## Heel Nederland (22-10-2026)
+
+Draait op deze Mac (16 GB) zonder Docker. `config.yaml` staat standaard op heel NL.
+
+| Stap | Doorlooptijd | Piekgeheugen | Resultaat |
+|---|---|---|---|
+| OSM NL downloaden | ~1 min | — | netherlands-latest.osm.pbf 1,4 GB |
+| `make prepare` (133 tegels van 20 km) | 6 min | 2,8 GB | 9,7 mln objecten, 8,46 mln woningen, 43.735 voorzieningen |
+| `make valhalla-build` | 81 s | 8,6 GB | tiles.tar 945 MB |
+| `make web-export` | 15,6 min | 3,0 GB | 21.396 haltelocaties, 2.282 buslijnen, 40 MB |
+
+- Eerste poging `prepare` in één keer: ~9 GB, waarvan 8,3 GB in swap; na minuten geen voortgang → per tegel (zie DECISIONS.md). Gooi per tegel gelijk aan de enkele run.
+- Validatie NL: 13.202 buurten, **96,3% binnen ±10%**, p90 3,0%. Totaal 18,10 mln inwoners geschat (CBS 1-1-2025: 18,04 mln).
+- Web-export: 42.792 isochronen in ~3,5 min (~185/s, 0 mislukt), haltes 4,4 min, lijnen 5,9 min (8 processen).
+- Controle export: elke lijn ligt tussen grootste halte en som bruto; waarden stijgen met de drempel; lijn 100 Huizen 24.888 inwoners ≤ 400 m (CLI-analyse: 24.845).
+- 780 haltelocaties liggen alleen in nevenpatronen en hebben daarom geen lijn in de viewer; 214 hebben geen inwoners binnen 1,2 km (bedrijventerreinen, P+R).
+- De OVapi-feed bevat ook België en Duitsland: 3.942 haltelocaties buiten NL weggelaten.
+
+## Webviewer
+- Code in `viewer/`, gepubliceerd op https://teun-sudo1.github.io/ovcatch/ via de branch `gh-pages` (`make deploy-site`).
+- Getest: bestanden via HTTP (`make serve-site`) en de viewerlogica headless (JavaScriptCore met stubs) op de NL-data: laden, kleurklassen, zoeken, halte + isochronen, lopen/fietsen, lijn met unieke totalen. Niet visueel in een browser bekeken.
+- Bijwerken na een nieuwe GTFS-feed: `make download` (alleen gtfs), `make gtfs`, `make valhalla`, `make web-export`, `make deploy-site`.

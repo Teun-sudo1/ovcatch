@@ -47,3 +47,15 @@ Format: **keuze** — reden — (alternatief).
 ## Frontend
 - **Vanilla JS + MapLibre GL (unpkg) + PDOK BRT grijs** — geen build-stap, één `web/`-map.
 - **Origineel vs. variant**: elk kan uit een andere GTFS-feed komen (bijv. archief-feed van vóór de omlegging als origineel, actuele feed als variant).
+
+## Heel Nederland
+- **Prepare per tegel van 20 km, uitgelijnd op het 100m-raster** — in één keer kost heel NL ~12 GB en loopt vast in swap op 16 GB. Stap A (vierkant) is lokaal en loopt per tegel; stap B/C heeft alleen kleine buurtsommen nodig (optelbaar over tegels) en wordt daarna in één keer bepaald. Een vierkant valt altijd in precies één tegel (middelpunt). Resultaat gelijk aan de enkele run (test; Gooi: 631.770 vs 631.741 inwoners, verschil door mediane oppervlakte per tegel voor objecten zonder oppervlakte).
+- **OSM-voorzieningen met C++ `KeyFilter`** — de Python-handler ziet alleen objecten met een relevante sleutel; NL in 35 s.
+
+## Webviewer
+- **Statisch op GitHub Pages, vooraf berekend** — geen server/Valhalla nodig voor bezoekers. (Alt: de FastAPI-app hosten — vergt server met ~10 GB data en Valhalla.)
+- **Eenheid: haltelocatie** = bus-perrons met dezelfde naam binnen `line.merge_distance_m` (verbonden componenten); één isochroon op het gemiddelde punt. `parent_station` ontbreekt bij ruim een derde van de perrons, dus niet bruikbaar.
+- **Per halte bruto, per lijn uniek** — per halte telt alles binnen bereik (wat je bij één halte wilt weten); per lijn telt elk adres één keer, zoals `analyse`.
+- **Alleen haltes binnen NL** (CBS-gemeentegrenzen + 200 m) — de OVapi-feed bevat ook België (De Lijn) en Duitsland, waar BAG/CBS ontbreekt. Lijnen met < 50% haltes in NL vallen weg.
+- **Compacte JSON + polylines (1e-5°)**; isochronen per tegel van 10 km, pas geladen bij klikken op een halte.
+- **Data op `gh-pages` als één commit zonder geschiedenis** (force push) — elke nieuwe export vervangt de vorige; `main` blijft klein.

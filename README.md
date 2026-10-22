@@ -3,6 +3,8 @@
 Vergelijk het bereik (catchment) van een buslijn en haar haltes — origineel vs. variant — met open data.
 Per halte en per lijn: geschatte inwoners, woningen, m² werk/winkel per functie, ruwe schatting arbeidsplaatsen en voorzieningen, binnen loop- en fietsafstand over het netwerk.
 
+**Webviewer: https://teun-sudo1.github.io/ovcatch/** — alle bushaltes en buslijnen van Nederland, vooraf berekend (zie [Webviewer](#webviewer-github-pages)).
+
 ## Snel starten (demo, zonder echte data)
 
 ```bash
@@ -12,18 +14,34 @@ make serve-demo   # http://localhost:8000
 ```
 De demo gebruikt een verzonnen dorp en een benaderende router (cirkels). Bovenin staat dan "DEMO" en "Benadering".
 
-## Echte data (macOS met Docker Desktop of OrbStack)
+## Echte data (macOS, 16 GB is genoeg voor heel NL)
 
-1. **Regio kiezen** in `config.yaml` → `region.bbox_wgs84` (standaard: het Gooi) en `region.osm_pbf_urls` (standaard: Noord-Holland + Utrecht, want het Gooi ligt op de provinciegrens). Voor heel NL: bbox `null` en alleen `netherlands-latest.osm.pbf`; zie `PROGRESS.md`.
-2. **Data**: `make data` — downloadt BAG (~7 GB), CBS-vierkanten, CBS-buurten, OSM en GTFS NL, verwerkt alles naar `data/processed/` en indexeert GTFS.
+1. **Regio kiezen** in `config.yaml` → `region.bbox_wgs84` (standaard `null` = heel Nederland) en `region.osm_pbf_urls` (standaard `netherlands-latest.osm.pbf`). Snel ontwikkelen op een regio kan ook, bijv. het Gooi: bbox `[5.05, 52.17, 5.45, 52.40]` met de extracten van Noord-Holland + Utrecht (het Gooi ligt op de provinciegrens).
+2. **Data**: `make data` — downloadt BAG (~7,8 GB), CBS-vierkanten, CBS-buurten, OSM en GTFS NL, verwerkt alles naar `data/processed/` en indexeert GTFS. Verwerking gaat per tegel van 20 km (`prepare.tile_km`): heel NL in ~6 min met < 3 GB geheugen.
    Validatie van de bevolkingsverdeling: `python -m ovcatch validate`.
 3. **Routing**: `make valhalla` — start Valhalla op `localhost:8002`.
-   - **Zonder Docker** (standaard als `docker` ontbreekt): bouwt eenmalig tiles uit `data/raw/*.osm.pbf` met de `pyvalhalla`-wheel (NH + Utrecht: ~20 s) en start `valhalla_service` op de achtergrond (log: `data/valhalla/service.log`). Los: `make valhalla-build`, `make valhalla-serve`.
+   - **Zonder Docker** (standaard als `docker` ontbreekt): bouwt eenmalig tiles uit `data/raw/*.osm.pbf` met de `pyvalhalla`-wheel (heel NL: ~1,5 min, 8,6 GB piek) en start `valhalla_service` op de achtergrond (log: `data/valhalla/service.log`). Los: `make valhalla-build`, `make valhalla-serve`.
    - **Met Docker**: kopieert de extracten naar `data/valhalla/` en start de container; volg met `make valhalla-logs`.
    Klaar als `curl localhost:8002/status` antwoordt. Na een nieuwe OSM-download: `rm -rf data/valhalla` en opnieuw `make valhalla`.
 4. **App**: `make serve` → http://localhost:8000
 
 Alles in Docker kan ook: `docker compose up -d --build`.
+
+## Webviewer (GitHub Pages)
+
+Statische kaart op https://teun-sudo1.github.io/ovcatch/ — geen server nodig, alles is vooraf berekend:
+- **Per haltelocatie** (perrons met dezelfde naam binnen 250 m): inwoners, woningen, arbeidsplaatsen, voorzieningen en adressen binnen 400/800/1200 m lopen en 1,5/3 km fietsen (bruto: alles binnen bereik), plus de isochronen.
+- **Per buslijn**: dezelfde kengetallen uniek over alle haltes (elk adres één keer), en per halte.
+- Zoeken op lijnnummer, lijnnaam, vervoerder of haltenaam; deelbare links (`#lijn=…`, `#halte=…`).
+
+Bijwerken (bijv. na een nieuwe GTFS-feed):
+```bash
+make valhalla      # Valhalla moet draaien
+make web-export    # data/web (heel NL: zie PROGRESS.md voor de doorlooptijd)
+make serve-site    # lokaal bekijken op http://localhost:8001
+make deploy-site   # publiceren: data/site als één commit op de branch gh-pages
+```
+De viewer-code staat in `viewer/`; de gegenereerde data staat alleen op `gh-pages`, zodat `main` klein blijft.
 
 ### Oude route vergelijken
 De oorspronkelijke lijn komt uit een **gearchiveerde GTFS-feed** van vóór de omlegging (bijv. via Mobility Database / Transitland, of eigen archief). Index die feed met een eigen naam:
