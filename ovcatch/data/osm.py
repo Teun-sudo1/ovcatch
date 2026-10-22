@@ -74,7 +74,9 @@ def extract_amenities(cfg: Config, osm_files: Path | list[Path]) -> gpd.GeoDataF
     files = [osm_files] if isinstance(osm_files, (str, Path)) else list(osm_files)
     for f in files:
         log.info("OSM-voorzieningen extraheren uit %s", f)
-        h.apply_file(str(f), locations=True)
+        # KeyFilter in C++: de Python-handler ziet alleen objecten met een relevante sleutel
+        # (scheelt bij heel NL honderden miljoenen callbacks); locaties worden vóór het filter opgeslagen.
+        h.apply_file(str(f), locations=True, filters=[osmium.filter.KeyFilter(*sorted(h.keys))])
     if not h.rows:
         return gpd.GeoDataFrame(columns=["osm_id", "categorie", "tag", "naam", "geometry"], geometry="geometry", crs=RD)
     ids, cats, tags, names, lons, lats = zip(*dict((r[0], r) for r in h.rows).values())
