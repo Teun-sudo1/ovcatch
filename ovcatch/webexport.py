@@ -102,8 +102,37 @@ def bus_lines(feed: Feed, route_types: list[int], merge_m: float, quay_area: dic
         if len(areas) < 2:
             continue
         out.append({"route_id": r.route_id, "short": str(r.route_short_name or ""), "long": str(r.route_long_name or ""),
-                    "agency": r.agency_name if isinstance(r.agency_name, str) else "", "areas": areas, "geometry": ln["geometry"]})
+                    "agency": r.agency_name if isinstance(r.agency_name, str) else "", "areas": areas, "geometry": ln["geometry"],
+                    "share_in_region": len(areas) / len(ln["stops"])})
     return out
+
+
+def region_polygon(cfg: Config):
+    """Gebied met BAG/CBS-data: gemeentegrenzen (CBS) + 200 m, geknipt op de regio-bbox. None = geen filter."""
+    from shapely.geometry import box
+
+    from .data.download import raw_paths
+    from .geo import bbox_wgs_to_rd
+
+    gpkg = raw_paths(cfg)["cbs_buurten"]
+    if not gpkg.exists():
+        return None
+    g = gpd.read_file(gpkg, layer="gemeenten", columns=[]).to_crs(RD)
+    poly = shapely.union_all(g.geometry.buffer(200).to_numpy())
+    bbox = bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
+    return poly.intersection(box(*bbox)) if bbox else poly
+
+
+def keep_in_region(areas: pd.DataFrame, quay_area: dict[str, int], poly) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Alleen haltelocaties binnen het gebied met data (de NL-feed bevat ook België en Duitsland)."""
+    if poly is None:
+        return areas, quay_area
+    inside = shapely.contains_xy(poly, areas["x"].to_numpy(), areas["y"].to_numpy())
+    new_id = np.full(len(areas), -1)
+    new_id[inside] = np.arange(inside.sum())
+    log.info("Haltelocaties buiten het gebied: %d van %d", int((~inside).sum()), len(areas))
+    qa = {q: int(new_id[a]) for q, a in quay_area.items() if new_id[a] >= 0}
+    return areas[inside].reset_index(drop=True), qa
 
 
 # ---------- isochronen ----------
@@ -261,7 +290,8 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
     rt = cfg["line"]["bus_route_types"]
     merge_m = cfg["line"]["merge_distance_m"]
     areas, quay_area = stop_areas(feed, rt, merge_m)
-    lines = bus_lines(feed, rt, merge_m, quay_area)
+    areas, quay_area = keep_in_region(areas, quay_area, region_polygon(cfg))
+    lines = [ln for ln in bus_lines(feed, rt, merge_m, quay_area) if ln["share_in_region"] >= 0.5]
     log.info("%d haltelocaties, %d buslijnen (%.0f s)", len(areas), len(lines), time.time() - t0)
 
     isos = fetch_isochrones(areas, cfg)
