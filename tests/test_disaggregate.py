@@ -112,3 +112,32 @@ def test_validation_skips_buurten_cut_by_region(cfg, demo_world):
     finally:
         cfg["region"]["bbox_wgs84"] = None
     assert val["buurtcode"].tolist() == [buurten["buurtcode"].iloc[0]]
+
+
+def test_tiled_equals_single_run(tmp_path, cfg, demo_world):
+    """Per tegel verwerken (heel NL) geeft hetzelfde als in één keer."""
+    import geopandas as gpd
+
+    from ovcatch.data.prepare import build_addresses, build_addresses_tiled
+
+    vbo_raw, grid_raw, buurten_raw, _ = demo_world
+    bag = tmp_path / "bag.gpkg"
+    vbo_raw.drop(columns="_true_inw").rename(columns={"vbo_id": "identificatie"}).to_file(bag, layer="verblijfsobject")
+    vk = tmp_path / "vk.gpkg"
+    grid_raw.to_file(vk, layer="vierkant_100m")
+    buurten = standardize_buurten(buurten_raw, cfg)
+    vbo, grid, _, _ = _prep(cfg, demo_world)
+
+    cfg = {**cfg, "data_dir": str(tmp_path / "data"), "prepare": {"tile_km": 1}}
+    from ovcatch.config import Config
+
+    cfg = Config(cfg)
+    single, rep1 = build_addresses(cfg, vbo, grid, buurten)
+    out = build_addresses_tiled(cfg, bag, vk, buurten)
+    tiled = gpd.read_parquet(cfg.addresses_path)
+    assert out["tiles"] > 10 and out["n"] == len(single) == len(tiled)
+    a = single.set_index("vbo_id")["inwoners"].sort_index()
+    b = tiled.set_index("vbo_id")["inwoners"].sort_index()
+    assert np.allclose(a.to_numpy(), b.reindex(a.index).to_numpy())
+    assert out["report"]["by_source"] == rep1["by_source"]
+    assert gpd.read_parquet(cfg.addresses_path, bbox=(143000, 476000, 143500, 476500)).shape[0] < len(tiled)

@@ -49,6 +49,10 @@ bag:
   include_lig_standplaats: true
   lig_standplaats_default_m2: 60
 
+prepare:
+  # Verwerking per tegel (km, veelvoud van 0,1) houdt het geheugen klein; heel NL op 16 GB.
+  tile_km: 20
+
 disaggregation:
   # area = naar rato van oppervlakte, count = gelijk per woning, mix = gewogen mix
   weight: area

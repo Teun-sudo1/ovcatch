@@ -69,29 +69,30 @@ def _assign_poly(points: gpd.GeoDataFrame, polys: gpd.GeoDataFrame, cols: list[s
     return j.reindex(points.index)[cols]
 
 
-def disaggregate(
-    vbo: gpd.GeoDataFrame,
-    grid: gpd.GeoDataFrame,
-    buurten: gpd.GeoDataFrame,
-    cfg: Config,
-) -> tuple[gpd.GeoDataFrame, DisaggReport, pd.DataFrame]:
-    """Geeft (vbo met kolommen inwoners/pop_source/buurtcode, rapport, validatietabel per buurt)."""
-    rep = DisaggReport()
+GEEN = "__geen__"  # woonobjecten buiten elke buurt
+
+
+def step_a(vbo: gpd.GeoDataFrame, grid: gpd.GeoDataFrame, buurten: gpd.GeoDataFrame, cfg: Config) -> tuple[gpd.GeoDataFrame, dict]:
+    """Stap A per vierkant + buurtcode + gewicht. Werkt per tegel, mits vierkanten niet over tegels heen vallen.
+
+    Kolommen erbij: inwoners, pop_source ('vierkant' of '' = nog te doen), buurtcode, _w (gewicht).
+    Geeft ook {pop_grid_total, pop_grid_unassigned}.
+    """
     vbo = vbo.copy()
     vbo["inwoners"] = 0.0
     vbo["pop_source"] = ""
+    vbo["_w"] = 0.0
     b_attr = _assign_poly(vbo, buurten, ["buurtcode"])
     vbo["buurtcode"] = b_attr["buurtcode"].astype("object").where(b_attr["buurtcode"].notna(), None)
-
+    stats = {"pop_grid_total": float(grid["inwoners"].sum(skipna=True)), "pop_grid_unassigned": 0.0}
     woon_idx = vbo.index[vbo["is_woon"].astype(bool)]
+    if not len(woon_idx):
+        stats["pop_grid_unassigned"] = stats["pop_grid_total"]
+        return vbo, stats
     woon = vbo.loc[woon_idx]
-    rep.n_woon = len(woon)
-    if woon.empty:
-        return vbo, rep, pd.DataFrame()
-
     w = pd.Series(dwelling_weights(woon, cfg), index=woon_idx)
+    vbo.loc[woon_idx, "_w"] = w.values
 
-    # --- A: vierkanten
     g_attr = _assign_poly(woon, grid, ["cell_id", "inwoners"])
     cell = g_attr["cell_id"]
     cell_inw = g_attr["inwoners"]
@@ -100,44 +101,67 @@ def disaggregate(
     est_a = cell_inw[in_valid] * w[in_valid] / sum_w.replace(0, np.nan)
     vbo.loc[est_a.index, "inwoners"] = est_a.fillna(0).values
     vbo.loc[est_a.index, "pop_source"] = "vierkant"
-
-    rep.pop_grid_total = float(grid["inwoners"].sum(skipna=True))
     used_cells = set(cell[in_valid].astype(int).unique())
-    rep.pop_grid_unassigned = float(grid.loc[~grid["cell_id"].isin(used_cells), "inwoners"].sum(skipna=True))
+    stats["pop_grid_unassigned"] = float(grid.loc[~grid["cell_id"].isin(used_cells), "inwoners"].sum(skipna=True))
+    return vbo, stats
 
-    # --- B/C: rest via buurt
-    rest_idx = woon_idx[~in_valid.to_numpy()]
+
+def buurt_summary(vbo: pd.DataFrame) -> pd.DataFrame:
+    """Per buurt de sommen die stap B/C nodig heeft. Optelbaar over tegels."""
+    woon = vbo[vbo["is_woon"].astype(bool)]
+    code = woon["buurtcode"].fillna(GEEN)
+    rest = woon["pop_source"] == ""
+    return pd.DataFrame(
+        {
+            "assigned_a": woon["inwoners"].where(~rest, 0.0).groupby(code).sum(),
+            "n_rest": rest.groupby(code).sum(),
+            "w_rest": woon["_w"].where(rest, 0.0).groupby(code).sum(),
+            "n_bag_woon": code.groupby(code).size(),
+        }
+    ).fillna(0)
+
+
+def buurt_factors(summary: pd.DataFrame, buurten: pd.DataFrame, cfg: Config) -> pd.DataFrame:
+    """Per buurt: inwoners per gewichtseenheid voor de rest-woningen, en de bron (stap B of C).
+
+    - buurt onbekend/geheim -> landelijk gemiddelde huishoudensgrootte
+    - rest van buurttotaal, als die per woning binnen 0,5–2x het buurtgemiddelde ligt
+    - anders buurtgemiddelde inwoners per woning (woningvoorraad CBS, of BAG-telling)
+    """
     nat = float(cfg["disaggregation"]["national_persons_per_dwelling"])
-    if len(rest_idx):
-        bt = buurten.set_index("buurtcode")[["inwoners", "woningen"]]
-        assigned_by_buurt = vbo.loc[woon_idx].groupby("buurtcode")["inwoners"].sum()
-        bag_won = vbo.loc[woon_idx].groupby("buurtcode").size()
-        rest = vbo.loc[rest_idx]
-        for code, grp in rest.groupby(rest["buurtcode"].fillna("__geen__")):
-            idx = grp.index
-            ww = w.loc[idx]
-            wn = ww / ww.sum() if ww.sum() > 0 else pd.Series(1 / len(idx), index=idx)
-            b_inw = bt["inwoners"].get(code, np.nan) if code != "__geen__" else np.nan
-            b_won = bt["woningen"].get(code, np.nan) if code != "__geen__" else np.nan
-            if pd.isna(b_won):
-                b_won = bag_won.get(code, np.nan)
-            if pd.isna(b_inw):
-                vbo.loc[idx, "inwoners"] = (len(idx) * nat * wn).values
-                vbo.loc[idx, "pop_source"] = "landelijk"
-                continue
-            avg = b_inw / b_won if (pd.notna(b_won) and b_won > 0) else nat
-            residual = b_inw - float(assigned_by_buurt.get(code, 0.0))
-            per = residual / len(idx)
-            if residual > 0 and 0.5 * avg <= per <= 2.0 * avg:
-                vbo.loc[idx, "inwoners"] = (residual * wn).values
-                vbo.loc[idx, "pop_source"] = "buurt_rest"
-            else:
-                vbo.loc[idx, "inwoners"] = (len(idx) * avg * wn).values
-                vbo.loc[idx, "pop_source"] = "buurt_gem"
+    s = summary[summary["n_rest"] > 0].copy()
+    bt = buurten.set_index("buurtcode")[["inwoners", "woningen"]]
+    b_inw = bt["inwoners"].reindex(s.index)
+    b_won = bt["woningen"].reindex(s.index).fillna(s["n_bag_woon"])
+    avg = (b_inw / b_won.where(b_won > 0)).fillna(nat)
+    residual = b_inw - s["assigned_a"]
+    per = residual / s["n_rest"]
+    use_rest = (residual > 0) & (per >= 0.5 * avg) & (per <= 2.0 * avg)
+    total = np.where(b_inw.isna(), s["n_rest"] * nat, np.where(use_rest, residual, s["n_rest"] * avg))
+    source = np.where(b_inw.isna(), "landelijk", np.where(use_rest, "buurt_rest", "buurt_gem"))
+    return pd.DataFrame({"factor": total / s["w_rest"], "source": source}, index=s.index)
 
-    rep.by_source = vbo.loc[woon_idx, "pop_source"].value_counts().to_dict()
+
+def apply_rest(vbo: pd.DataFrame, factors: pd.DataFrame) -> pd.DataFrame:
+    """Stap B/C: rest-woningen krijgen gewicht x buurtfactor."""
+    rest = vbo["is_woon"].astype(bool) & (vbo["pop_source"] == "")
+    if rest.any():
+        code = vbo.loc[rest, "buurtcode"].fillna(GEEN)
+        f = factors.reindex(code)
+        vbo.loc[rest, "inwoners"] = (vbo.loc[rest, "_w"].to_numpy() * f["factor"].to_numpy())
+        vbo.loc[rest, "pop_source"] = f["source"].to_numpy()
+    return vbo
+
+
+def report(vbo: pd.DataFrame, buurten: pd.DataFrame, cfg: Config, grid_stats: dict) -> tuple[DisaggReport, pd.DataFrame]:
+    woon = vbo[vbo["is_woon"].astype(bool)]
+    rep = DisaggReport(
+        n_woon=len(woon),
+        pop_grid_total=grid_stats["pop_grid_total"],
+        pop_grid_unassigned=grid_stats["pop_grid_unassigned"],
+    )
+    rep.by_source = woon["pop_source"].value_counts().to_dict()
     rep.pop_estimated_total = float(vbo["inwoners"].sum())
-
     val = validate_against_buurten(vbo, buurten, cfg)
     tol = cfg["disaggregation"]["validation"]["tolerance"]
     ok = val["abs_rel_err"] <= tol
@@ -150,7 +174,23 @@ def disaggregate(
         "min_share_within": cfg["disaggregation"]["validation"]["min_share_within"],
     }
     log.info("Disaggregatie: %s", rep.to_dict())
-    return vbo, rep, val
+    return rep, val
+
+
+def disaggregate(
+    vbo: gpd.GeoDataFrame,
+    grid: gpd.GeoDataFrame,
+    buurten: gpd.GeoDataFrame,
+    cfg: Config,
+) -> tuple[gpd.GeoDataFrame, DisaggReport, pd.DataFrame]:
+    """Geeft (vbo met kolommen inwoners/pop_source/buurtcode, rapport, validatietabel per buurt).
+
+    In één keer; voor heel NL doet prepare hetzelfde per tegel (zie data/prepare.py).
+    """
+    vbo, stats = step_a(vbo, grid, buurten, cfg)
+    vbo = apply_rest(vbo, buurt_factors(buurt_summary(vbo), buurten, cfg))
+    rep, val = report(vbo, buurten, cfg, stats)
+    return vbo.drop(columns="_w"), rep, val
 
 
 def validate_against_buurten(vbo: pd.DataFrame, buurten: pd.DataFrame, cfg: Config, min_inw: float = 50) -> pd.DataFrame:

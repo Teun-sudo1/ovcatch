@@ -17,9 +17,9 @@ log = logging.getLogger(__name__)
 STANDARD_COLS = ["vbo_id", "gebruiksdoel", "oppervlakte", "status", "geometry"]
 
 
-def read_bag(cfg: Config, gpkg: Path) -> gpd.GeoDataFrame:
-    """Lees verblijfsobjecten (+ optioneel lig-/standplaatsen) binnen de regio."""
-    bbox = bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
+def read_bag(cfg: Config, gpkg: Path, bbox_rd=None) -> gpd.GeoDataFrame:
+    """Lees verblijfsobjecten (+ optioneel lig-/standplaatsen) binnen de regio (of `bbox_rd`, een tegel)."""
+    bbox = bbox_rd or bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
     layers = {name for name, _ in pyogrio.list_layers(gpkg)}
     vbo_layer = "verblijfsobject" if "verblijfsobject" in layers else _guess_layer(layers, "verblijfsobject")
     info = pyogrio.read_info(gpkg, layer=vbo_layer)

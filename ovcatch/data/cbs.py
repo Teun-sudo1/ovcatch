@@ -32,8 +32,8 @@ def _first_layer(path: Path, preferred: str | None = None) -> str:
     return layers[0]
 
 
-def read_vk100(cfg: Config, gpkg: Path) -> gpd.GeoDataFrame:
-    bbox = bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
+def read_vk100(cfg: Config, gpkg: Path, bbox_rd=None) -> gpd.GeoDataFrame:
+    bbox = bbox_rd or bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
     layer = _first_layer(gpkg, "vierkant")
     gdf = pyogrio.read_dataframe(gpkg, layer=layer, bbox=bbox)
     return standardize_vk(gdf, cfg)
