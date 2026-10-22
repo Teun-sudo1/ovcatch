@@ -450,9 +450,11 @@
   }
 
   // ---------- paneel ----------
-  function delta(b, v, digits) {
+  // groen = beter, rood = slechter; bij routelengte en rijtijd is minder beter
+  function delta(b, v, digits, lowerBetter = false) {
     const d = v - b, f = digits ? O.nf1 : O.nf;
-    const cls = d > 0 ? "pos" : d < 0 ? "neg" : "";
+    const better = lowerBetter ? -d : d;
+    const cls = better > 0 ? "pos" : better < 0 ? "neg" : "";
     const pct = b ? ` (${d >= 0 ? "+" : ""}${O.nf1.format((100 * d) / b)}%)` : "";
     return `<span class="${cls}">${d >= 0 ? "+" : ""}${f.format(d)}${pct}</span>`;
   }
@@ -498,9 +500,9 @@
       const kv = (arr) => Object.fromEntries(K.map((k, i) => [k, arr[i]]));
       const lb = kv(rb.line[th]), lv = kv(rv.line[th]);
       const within = `binnen ${O.fmtTh(t)} ${O.MODE_ADJ[m]}`;
-      const kpi = (label, vv, bb, digits, cls = "") => `<div class="kpi ${cls}"><div class="lbl">${label}</div><div class="val">${(digits ? O.nf1 : O.nf).format(vv)}</div><div class="cmp">origineel ${(digits ? O.nf1 : O.nf).format(bb)} · ${delta(bb, vv, digits)}</div></div>`;
+      const kpi = (label, vv, bb, digits, cls = "", lowerBetter = false) => `<div class="kpi ${cls}"><div class="lbl">${label}</div><div class="val">${(digits ? O.nf1 : O.nf).format(vv)}</div><div class="cmp">origineel ${(digits ? O.nf1 : O.nf).format(bb)} · ${delta(bb, vv, digits, lowerBetter)}</div></div>`;
       const rB = E.res.base.route, rV = E.res.variant.route;
-      const routeKpis = rB && rV ? kpi("Routelengte (km)", rV.length_m / 1000, rB.length_m / 1000, 1) + kpi("Rijtijd (min)", rV.duration_s / 60, rB.duration_s / 60, 1) : "";
+      const routeKpis = rB && rV ? kpi("Routelengte (km)", rV.length_m / 1000, rB.length_m / 1000, 1, "", true) + kpi("Rijtijd (min)", rV.duration_s / 60, rB.duration_s / 60, 1, "", true) : "";
       const tb = E.res.baseSc.trips, tv = E.res.varSc.trips ?? tb;
       const freqKpi = tb > 0 && tv != null
         ? kpi("Bereik × frequentie (inwoner-ritten per werkdag)", lv.inwoners * tv, lb.inwoners * tb, 0, "wide")
