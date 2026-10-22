@@ -152,6 +152,9 @@ def _gtfs_zip(path: Path, route_short: str, route_long: str, stops_rd: list[tupl
                 hh = f"{t // 3600:02d}:{(t % 3600) // 60:02d}:{t % 60:02d}"
                 times += f"{tid},{hh},{hh},{sid},{i + 1}\n"
     files["trips.txt"] = trips
+    # werkdagen in oktober 2026; dinsdag 13-10 vervalt (uitzondering), zaterdag 17-10 rijdt extra
+    files["calendar.txt"] = "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nWD,1,1,1,1,1,0,0,20261001,20261031\n"
+    files["calendar_dates.txt"] = "service_id,date,exception_type\nWD,20261013,2\nWD,20261017,1\n"
     files["stop_times.txt"] = times
     sh = "shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence\n"
     for d, pts in ((0, shape_rd), (1, list(reversed(shape_rd)))):

@@ -29,14 +29,15 @@ from shapely.geometry import LineString
 
 from .config import Config
 from .geo import RD, lonlat_to_rd, to_rd
-from .gtfs import Feed, _norm
+from .gtfs import PEAK_S, Feed, _norm
 from .routing import make_router
 from .store import DataStore
 
 log = logging.getLogger(__name__)
 
 # kengetallen in de export (volgorde = kolommen in stops.json / lines.json)
-METRICS = ["inwoners", "woningen", "banen", "voorzieningen", "adressen"]
+METRICS = ["inwoners", "woningen", "banen", "voorzieningen", "adressen", "inw_0_15", "inw_15_25", "inw_65plus"]
+AGE = ["inw_0_15", "inw_15_25", "inw_65plus"]
 ISO_TILE_M = 10_000
 CALC_TILE_M = 5_000
 
@@ -202,6 +203,9 @@ def _point_values(store: DataStore, bbox) -> tuple[gpd.GeoDataFrame, np.ndarray]
         vals[:n_a, 1] = ad["is_woon"].to_numpy()
         vals[:n_a, 2] = ad["banen_schatting"].to_numpy()
         vals[:n_a, 4] = 1
+        for i, c in enumerate(AGE, start=5):
+            if c in ad:
+                vals[:n_a, i] = ad[c].to_numpy()
     if n_m:
         vals[n_a:, 3] = 1
     geom = np.concatenate([ad.geometry.to_numpy(), am.geometry.to_numpy()]) if n_m else ad.geometry.to_numpy()
@@ -337,13 +341,24 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
         for a in ln["areas"]:
             area_lines[a].append(li)
     zeros = {m: np.zeros((bands[m], len(METRICS))) for m in modes}
+    # frequentie op de referentiedag: vertrekken per haltelocatie (alle buslijnen), ritten per lijn
+    dep = np.zeros((len(areas), 2))
+    if feed.stop_departures is not None:
+        sd = feed.stop_departures[feed.stop_departures["route_type"].isin(rt)].groupby("stop_id")[["dep_day", "dep_peak"]].sum()
+        for i, quays in enumerate(areas["quays"]):
+            dep[i] = sd.reindex(quays).fillna(0).sum().to_numpy()
+    trips = {}
+    if feed.route_trips is not None:
+        for rid, g in feed.route_trips.groupby("route_id"):
+            trips[rid] = [int(g["trips_day"].sum()), round(float(g["trips_peak"].max()) / ((PEAK_S[1] - PEAK_S[0]) / 3600), 1)]
     stops_rows = []
     for i, a in enumerate(areas.itertuples()):
         vals = []
         for m in modes:
             vals += _rows_round(area_res.get((i, m), zeros[m]))
         iso_key = f"{int(a.x // ISO_TILE_M)}_{int(a.y // ISO_TILE_M)}"
-        stops_rows.append([a.name, round(a.lon, 6), round(a.lat, 6), vals, area_lines.get(i, []), iso_key])
+        stops_rows.append([a.name, round(a.lon, 6), round(a.lat, 6), vals, area_lines.get(i, []), iso_key,
+                           [int(dep[i, 0]), round(dep[i, 1] / ((PEAK_S[1] - PEAK_S[0]) / 3600), 1)]])
     line_rows = []
     for li, ln in enumerate(lines):
         vals = []
@@ -352,11 +367,12 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
         geom = ln["geometry"]
         if len(geom) > 2:
             geom = list(shapely.simplify(LineString(geom), 0.00005).coords)  # ~5 m
-        line_rows.append([ln["short"], ln["long"], ln["agency"], ln["areas"], vals, encode_polyline(geom), ln["dirs"]])
+        line_rows.append([ln["short"], ln["long"], ln["agency"], ln["areas"], vals, encode_polyline(geom), ln["dirs"],
+                          trips.get(ln["route_id"], [0, 0.0])])
 
     thresholds = {m: [int(t) for t in cfg["thresholds"][m]] for m in modes}
-    _dump(out / "stops.json", {"columns": ["naam", "lon", "lat", "waarden", "lijnen", "iso"], "rows": stops_rows})
-    _dump(out / "lines.json", {"columns": ["nummer", "naam", "vervoerder", "haltes", "waarden", "route", "richting"], "rows": line_rows})
+    _dump(out / "stops.json", {"columns": ["naam", "lon", "lat", "waarden", "lijnen", "iso", "vertrek_dag_spitsuur"], "rows": stops_rows})
+    _dump(out / "lines.json", {"columns": ["nummer", "naam", "vervoerder", "haltes", "waarden", "route", "richting", "ritten_dag_spitsuur"], "rows": line_rows})
 
     iso_tiles = defaultdict(dict)
     for i, (x, y) in enumerate(zip(areas["x"], areas["y"])):
@@ -382,6 +398,8 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
         "n_haltes": len(areas),
         "n_lijnen": len(lines),
         "router": cfg["routing"]["engine"],
+        "referentiedag": feed.ref_date,
+        "spits": [PEAK_S[0] // 3600, PEAK_S[1] // 3600],
         "disaggregatie": json.loads(rep_file.read_text()) if rep_file.exists() else None,
     }
     meta |= export_cells(cfg, out)
@@ -403,7 +421,8 @@ def export_cells(cfg: Config, out: Path) -> dict:
     t0 = time.time()
     (out / "cells").mkdir(parents=True, exist_ok=True)
     # coördinaten uit de bbox-kolom: geen shapely-geometrieën nodig voor 10 mln punten
-    tab = pq.read_table(cfg.addresses_path, columns=["bbox", "inwoners", "is_woon", "banen_schatting"])
+    have = set(pq.read_schema(cfg.addresses_path).names)
+    tab = pq.read_table(cfg.addresses_path, columns=["bbox", "inwoners", "is_woon", "banen_schatting", *[c for c in AGE if c in have]])
     bb = tab.column("bbox").combine_chunks()
     df = pd.DataFrame({
         "cx": np.floor(bb.field("xmin").to_numpy() / 100).astype(np.int64),
@@ -413,6 +432,7 @@ def export_cells(cfg: Config, out: Path) -> dict:
         "banen": tab.column("banen_schatting").to_numpy(),
         "voorzieningen": 0.0,
         "adressen": 1.0,
+        **{c: (tab.column(c).to_numpy() if c in have else 0.0) for c in AGE},
     })
     del tab, bb
     if cfg.amenities_path.exists():
@@ -420,7 +440,7 @@ def export_cells(cfg: Config, out: Path) -> dict:
         df = pd.concat([df, pd.DataFrame({
             "cx": np.floor(am.geometry.x.to_numpy() / 100).astype(np.int64),
             "cy": np.floor(am.geometry.y.to_numpy() / 100).astype(np.int64),
-            "inwoners": 0.0, "woningen": 0.0, "banen": 0.0, "voorzieningen": 1.0, "adressen": 0.0,
+            "inwoners": 0.0, "woningen": 0.0, "banen": 0.0, "voorzieningen": 1.0, "adressen": 0.0, **{c: 0.0 for c in AGE},
         })], ignore_index=True)
     cells = df.groupby(["cx", "cy"], sort=False)[METRICS].sum().reset_index()
     lon, lat = _tf(RD, WGS84).transform(cells["cx"].to_numpy() * 100 + 50.0, cells["cy"].to_numpy() * 100 + 50.0)
@@ -433,7 +453,8 @@ def export_cells(cfg: Config, out: Path) -> dict:
             "lon": g["lon"].tolist(),
             "lat": g["lat"].tolist(),
             # inwoners/banen op 0,1 (vierkant-sommen van fracties), tellingen geheel
-            "v": [[round(a, 1), int(b), round(c, 1), int(d), int(e)] for a, b, c, d, e in g[METRICS].itertuples(index=False)],
+            "v": [[round(a, 1), int(b), round(c, 1), int(d), int(e), round(f, 1), round(h, 1), round(k, 1)]
+                  for a, b, c, d, e, f, h, k in g[METRICS].itertuples(index=False)],
         })
         n_files += 1
     log.info("Vierkanten: %d in %d tegels (%.0f s)", len(cells), n_files, time.time() - t0)

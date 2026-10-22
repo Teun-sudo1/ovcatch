@@ -193,6 +193,40 @@ def disaggregate(
     return vbo.drop(columns="_w"), rep, val
 
 
+def age_shares(vbo: gpd.GeoDataFrame, grid: gpd.GeoDataFrame, buurten: pd.DataFrame, cfg: Config) -> pd.DataFrame:
+    """Aandeel per leeftijdsgroep per woonobject: vierkant (aantal/inwoners), anders buurtpercentage,
+    anders landelijk. Per groep apart: CBS maakt een groep in een vierkant soms geheim en de rest niet.
+    Kolommen share_<groep>; werkt per tegel (vierkanten van die tegel)."""
+    nat = cfg["disaggregation"].get("national_age_shares", {})
+    out = pd.DataFrame(index=vbo.index)
+    if not nat:
+        return out
+    woon = vbo[vbo["is_woon"].astype(bool)]
+    cols = [f"age_{g}" for g in nat if f"age_{g}" in grid.columns]
+    cell = _assign_poly(woon, grid, ["inwoners", *cols]) if len(woon) else pd.DataFrame(index=woon.index)
+    bt = buurten.set_index("buurtcode")
+    code = woon["buurtcode"]
+    for g, share in nat.items():
+        s = pd.Series(float(share), index=woon.index)
+        if f"pct_{g}" in bt.columns:
+            b = bt[f"pct_{g}"].reindex(code).to_numpy()
+            s = s.where(np.isnan(b), b)
+        if f"age_{g}" in cell.columns:
+            inw = cell["inwoners"].to_numpy(dtype=float)
+            c = cell[f"age_{g}"].to_numpy(dtype=float) / np.where(inw > 0, inw, np.nan)
+            s = s.where(np.isnan(c), np.clip(c, 0, 1))
+        out[f"share_{g}"] = 0.0
+        out.loc[woon.index, f"share_{g}"] = s.to_numpy()
+    return out
+
+
+def add_age_groups(vbo: pd.DataFrame, shares: pd.DataFrame) -> pd.DataFrame:
+    """inw_<groep> = geschatte inwoners x aandeel; de aandeel-kolommen gaan eruit."""
+    for c in [c for c in shares.columns if c.startswith("share_")]:
+        vbo[f"inw_{c[6:]}"] = vbo["inwoners"].to_numpy() * shares[c].reindex(vbo.index).fillna(0).to_numpy()
+    return vbo
+
+
 def validate_against_buurten(vbo: pd.DataFrame, buurten: pd.DataFrame, cfg: Config, min_inw: float = 50) -> pd.DataFrame:
     """Vergelijk som geschatte inwoners per buurt met CBS-buurttotaal.
 

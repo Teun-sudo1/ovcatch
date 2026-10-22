@@ -51,11 +51,23 @@ def standardize_vk(gdf: gpd.GeoDataFrame, cfg: Config) -> gpd.GeoDataFrame:
             "cell_id": np.arange(len(gdf)),
             "inwoners": clean_count(gdf[inw]).values,
             "woningen": clean_count(gdf[won]).values if won else np.nan,
+            **_optional(gdf, c.get("cbs_vk_leeftijd", {}), "age_", 1.0),
         },
         geometry=gdf.geometry.values,
         crs=gdf.crs or RD,
     ).to_crs(RD)
     log.info("CBS vierkanten: %d (geheim/onbekend: %d)", len(out), out["inwoners"].isna().sum())
+    return out
+
+
+def _optional(gdf, groups: dict[str, list[str]], prefix: str, scale: float) -> dict[str, np.ndarray]:
+    """Optionele kolommen per groep (bijv. leeftijd); ontbrekende kolom = NaN (dan landelijk aandeel)."""
+    out = {}
+    for g, cands in groups.items():
+        try:
+            out[f"{prefix}{g}"] = clean_count(gdf[pick_column(gdf.columns, cands, g)]).values * scale
+        except KeyError:
+            out[f"{prefix}{g}"] = np.full(len(gdf), np.nan)
     return out
 
 
@@ -87,6 +99,7 @@ def standardize_buurten(gdf: gpd.GeoDataFrame, cfg: Config) -> gpd.GeoDataFrame:
             "buurtnaam": gdf[naam].astype(str).values,
             "inwoners": clean_count(gdf[inw]).values,
             "woningen": clean_count(gdf[won]).values if won else np.nan,
+            **_optional(gdf, c.get("cbs_buurt_leeftijd_pct", {}), "pct_", 0.01),
         },
         geometry=gdf.geometry.values,
         crs=gdf.crs or RD,

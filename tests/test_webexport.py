@@ -28,6 +28,14 @@ def test_export_demo(demo_cfg, tmp_path):
         per_stop = [stops[a][3][b * n_metrics] for a in line[3]]
         assert max(per_stop) - 1 <= line[4][b * n_metrics] <= sum(per_stop) + len(per_stop)  # afronding
     assert list((out / "iso").glob("*.json"))
+    # frequentie: demo heeft 6 ritten per richting, 4 in de spits (07–09) -> 12 per dag, 2 per uur per richting
+    assert meta["referentiedag"] == "2026-10-01"
+    assert line[7] == [12, 2.0]
+    assert max(s[6][0] for s in stops) > 0
+    # leeftijdsgroepen staan in de waarden en zijn deel van de inwoners
+    k = meta["kengetallen"]
+    for s in stops:
+        assert s[3][k.index("inw_65plus")] <= s[3][k.index("inwoners")] + 1
 
 
 def test_cells_match_address_totals(demo_cfg, tmp_path):

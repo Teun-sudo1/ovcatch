@@ -14,7 +14,7 @@ import pyarrow.parquet as pq
 from shapely.geometry import box
 
 from ..config import Config
-from ..disaggregate import apply_rest, buurt_factors, buurt_summary, disaggregate, report, step_a
+from ..disaggregate import add_age_groups, age_shares, apply_rest, buurt_factors, buurt_summary, disaggregate, report, step_a
 from ..geo import bbox_wgs_to_rd
 from .bag import add_category_area, read_bag
 from .cbs import read_buurten, read_vk100
@@ -48,6 +48,7 @@ def write_geoparquet(gdf: gpd.GeoDataFrame, path) -> None:
 def build_addresses(cfg: Config, vbo, grid, buurten) -> tuple[gpd.GeoDataFrame, dict]:
     vbo = add_category_area(vbo, cfg["categories"])
     vbo, rep, val = disaggregate(vbo, grid, buurten, cfg)
+    vbo = add_age_groups(vbo, age_shares(vbo, grid, buurten, cfg))
     vbo = add_jobs_estimate(vbo, cfg)
     return vbo, _write_report(cfg, rep, val)
 
@@ -104,6 +105,7 @@ def build_addresses_tiled(cfg: Config, bag_gpkg, vk_gpkg, buurten: gpd.GeoDataFr
         for k in stats:
             stats[k] += st[k]
         sums.append(buurt_summary(vbo))
+        vbo = vbo.join(age_shares(vbo, grid, buurten, cfg))  # toepassen na stap B/C (pas 2)
         vbo["buurtcode"] = vbo["buurtcode"].astype("string")
         vbo["pop_source"] = vbo["pop_source"].astype("string")
         vbo.to_parquet(tmp / f"{i:04d}.parquet")
@@ -120,7 +122,9 @@ def build_addresses_tiled(cfg: Config, bag_gpkg, vk_gpkg, buurten: gpd.GeoDataFr
     try:
         for i in done:
             vbo = gpd.read_parquet(tmp / f"{i:04d}.parquet")
-            vbo = add_jobs_estimate(apply_rest(vbo, factors), cfg).drop(columns="_w")
+            vbo = apply_rest(vbo, factors)
+            shares = vbo[[c for c in vbo.columns if c.startswith("share_")]]
+            vbo = add_jobs_estimate(add_age_groups(vbo.drop(columns=shares.columns), shares), cfg).drop(columns="_w")
             light.append(pd.DataFrame({c: vbo[c] for c in ("buurtcode", "inwoners", "is_woon", "pop_source")}))
             write_geoparquet(vbo, part)
             table = pq.read_table(part)

@@ -86,3 +86,15 @@ def test_route_points_skip_return_only_stops():
     pts, mask = route_points(sc)
     assert pts == [(5.0, 52.0), (5.15, 52.01), (5.11, 52.0), (5.2, 52.0)]
     assert mask == [True, False, True, True]
+
+
+def test_frequencies_on_reference_weekday(demo_cfg):
+    f = Feed(demo_cfg.gtfs_dir / "demo_2024_oud")
+    # di/wo/do met de meeste ritten; bij gelijkspel de vroegste: do 1 oktober 2026
+    assert f.ref_date == "2026-10-01"
+    rt = f.route_trips.set_index("direction_id")
+    assert rt.loc[0, "trips_day"] == 6 and rt.loc[0, "trips_peak"] == 4  # 07:00..09:30, spits 07–09
+    dep = f.stop_departures.set_index("stop_id")["dep_day"]
+    assert dep["Noordeinde"] == 6  # beginhalte richting 0
+    first_dir1 = f.patterns[f.patterns.direction_id == 1].pattern.iloc[0].split("|")
+    assert first_dir1[-1] not in dep.index or dep[first_dir1[-1]] == 0  # eindhalte: geen vertrekken

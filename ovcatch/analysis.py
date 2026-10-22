@@ -25,12 +25,15 @@ from .store import DataStore
 
 log = logging.getLogger(__name__)
 
-BASE_METRICS = ["n_adressen", "n_woningen", "inwoners", "banen_schatting"]
+BASE_METRICS = ["n_adressen", "n_woningen", "inwoners", "inw_0_15", "inw_15_25", "inw_65plus", "banen_schatting"]
 
 LABELS = {
     "n_adressen": "Adressen (verblijfsobjecten)",
     "n_woningen": "Woningen",
     "inwoners": "Inwoners (geschat)",
+    "inw_0_15": "Inwoners 0–15 jaar",
+    "inw_15_25": "Inwoners 15–25 jaar",
+    "inw_65plus": "Inwoners 65+",
     "banen_schatting": "Arbeidsplaatsen (ruwe schatting)",
 }
 
@@ -83,6 +86,8 @@ def _aggregate(addr: pd.DataFrame, am: pd.DataFrame, keys: list[str], amen_cats:
     m["inwoners"] = float(addr["inwoners"].sum()) if len(addr) else 0.0
     m["banen_schatting"] = float(addr["banen_schatting"].sum()) if "banen_schatting" in addr and len(addr) else 0.0
     for k in keys:
+        if k.startswith("inw_"):
+            m[k] = float(addr[k].sum()) if k in addr and len(addr) else 0.0
         if k.startswith("m2_"):
             m[k] = float(addr[k].sum()) if k in addr and len(addr) else 0.0
     vc = am["categorie"].value_counts() if len(am) else {}

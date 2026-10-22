@@ -20,7 +20,8 @@ from .geo import lonlat_to_rd, to_rd
 
 log = logging.getLogger(__name__)
 
-NEEDED = ["agency.txt", "routes.txt", "trips.txt", "stops.txt", "stop_times.txt", "shapes.txt"]
+NEEDED = ["agency.txt", "routes.txt", "trips.txt", "stops.txt", "stop_times.txt", "shapes.txt", "calendar.txt", "calendar_dates.txt"]
+PEAK_S = (7 * 3600, 9 * 3600)  # ochtendspits 07:00–09:00
 
 
 def feed_name_from_zip(zip_path: Path) -> str:
@@ -85,8 +86,10 @@ def index_feed(zip_path: Path, gtfs_dir: Path, name: str | None = None, keep_raw
     tcols = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {csv('trips.txt')}").fetchall()}
     dir_expr = "coalesce(TRY_CAST(direction_id AS INTEGER), 0)" if "direction_id" in tcols else "0"
     shape_expr = "shape_id" if "shape_id" in tcols else "NULL"
+    svc_expr = "service_id" if "service_id" in tcols else "NULL"
     con.execute(
-        f"CREATE TABLE trips AS SELECT trip_id, route_id, {dir_expr} AS direction_id, {shape_expr} AS shape_id FROM {csv('trips.txt')}"
+        f"CREATE TABLE trips AS SELECT trip_id, route_id, {dir_expr} AS direction_id, {shape_expr} AS shape_id, "
+        f"{svc_expr} AS service_id FROM {csv('trips.txt')}"
     )
 
     def secs(col):
@@ -100,7 +103,8 @@ def index_feed(zip_path: Path, gtfs_dir: Path, name: str | None = None, keep_raw
         CREATE TABLE trip_patterns AS
         SELECT trip_id,
                string_agg(stop_id, '|' ORDER BY seq) AS pattern,
-               max({secs('arrival_time')}) - min({secs('departure_time')}) AS duration_s
+               max({secs('arrival_time')}) - min({secs('departure_time')}) AS duration_s,
+               min({secs('departure_time')}) AS start_s
         FROM (
           SELECT trip_id, stop_id, TRY_CAST(stop_sequence AS INTEGER) AS seq, arrival_time, departure_time
           FROM {csv('stop_times.txt')}
@@ -131,13 +135,83 @@ def index_feed(zip_path: Path, gtfs_dir: Path, name: str | None = None, keep_raw
             ) TO '{(out / 'shapes.parquet').as_posix()}' (FORMAT parquet)
             """
         )
+    ref_date = _index_frequencies(con, raw, out, csv, secs)
     con.close()
-    meta = {"name": name, "source_zip": str(zip_path)}
+    meta = {"name": name, "source_zip": str(zip_path), "ref_date": ref_date}
     (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     if not keep_raw:
         shutil.rmtree(raw, ignore_errors=True)
     log.info("GTFS index klaar: %s", out)
     return out
+
+
+def _index_frequencies(con, raw: Path, out: Path, csv, secs) -> str | None:
+    """Ritten en vertrekken op een representatieve werkdag (di/wo/do met de meeste ritten).
+
+    Schrijft route_trips.parquet (route, richting: ritten per dag en in de ochtendspits) en
+    stop_departures.parquet (perron, route_type: vertrekken per dag en in de spits).
+    """
+    parts = []
+    if (raw / "calendar.txt").exists():
+        parts.append(
+            f"""SELECT c.service_id, CAST(g.d AS DATE) AS date
+                FROM {csv('calendar.txt')} c,
+                     generate_series(strptime(c.start_date, '%Y%m%d'), strptime(c.end_date, '%Y%m%d'), INTERVAL 1 DAY) g(d)
+                WHERE [c.monday, c.tuesday, c.wednesday, c.thursday, c.friday, c.saturday, c.sunday][isodow(g.d)] = '1'"""
+        )
+    removed = ""
+    if (raw / "calendar_dates.txt").exists():
+        cd = csv("calendar_dates.txt")
+        parts.append(f"SELECT service_id, CAST(strptime(date, '%Y%m%d') AS DATE) AS date FROM {cd} WHERE exception_type = '1'")
+        removed = f"EXCEPT SELECT service_id, CAST(strptime(date, '%Y%m%d') AS DATE) FROM {cd} WHERE exception_type = '2'"
+    if not parts:
+        log.warning("Geen calendar(_dates).txt: geen frequenties")
+        return None
+    con.execute(f"CREATE TABLE service_dates AS SELECT DISTINCT * FROM ({' UNION ALL '.join(parts)}) {removed}")
+    row = con.execute(
+        """SELECT sd.date FROM trips t JOIN service_dates sd USING (service_id)
+           GROUP BY sd.date
+           ORDER BY (isodow(sd.date) IN (2, 3, 4)) DESC, (isodow(sd.date) <= 5) DESC, count(*) DESC, sd.date
+           LIMIT 1"""
+    ).fetchone()
+    if not row:
+        return None
+    ref = row[0]
+    con.execute("CREATE TABLE ref_trips AS SELECT t.* FROM trips t JOIN service_dates sd USING (service_id) WHERE sd.date = ?", [ref])
+    # Een vertrek = halte waar je zonder te bellen kunt instappen, niet de laatste van de rit.
+    # pickup_type 1 = geen instap, 2 = op afroep (Flex, belbus): telt niet als gewone frequentie.
+    stcols = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {csv('stop_times.txt')}").fetchall()}
+    regular = "coalesce(nullif(pickup_type, ''), '0') NOT IN ('1', '2')" if "pickup_type" in stcols else "true"
+    con.execute(
+        f"""CREATE TABLE ref_deps AS
+            SELECT trip_id, stop_id, dep_s FROM (
+              SELECT trip_id, stop_id, {secs('departure_time')} AS dep_s, {regular} AS regular,
+                     TRY_CAST(stop_sequence AS INTEGER) AS seq,
+                     max(TRY_CAST(stop_sequence AS INTEGER)) OVER (PARTITION BY trip_id) AS last_seq
+              FROM {csv('stop_times.txt')}
+              WHERE trip_id IN (SELECT trip_id FROM ref_trips)
+            ) WHERE regular AND seq < last_seq"""
+    )
+    p0, p1 = PEAK_S
+    con.execute(
+        f"""COPY (
+              SELECT t.route_id, t.direction_id, count(*) AS trips_day,
+                     count(*) FILTER (WHERE p.start_s >= {p0} AND p.start_s < {p1}) AS trips_peak
+              FROM ref_trips t JOIN trip_patterns p USING (trip_id)
+              WHERE t.trip_id IN (SELECT DISTINCT trip_id FROM ref_deps)
+              GROUP BY 1, 2
+            ) TO '{(out / 'route_trips.parquet').as_posix()}' (FORMAT parquet)"""
+    )
+    con.execute(
+        f"""COPY (
+              SELECT d.stop_id, TRY_CAST(r.route_type AS INTEGER) AS route_type, count(*) AS dep_day,
+                     count(*) FILTER (WHERE d.dep_s >= {p0} AND d.dep_s < {p1}) AS dep_peak
+              FROM ref_deps d JOIN ref_trips t USING (trip_id) JOIN routes r ON r.route_id = t.route_id
+              GROUP BY 1, 2
+            ) TO '{(out / 'stop_departures.parquet').as_posix()}' (FORMAT parquet)"""
+    )
+    log.info("Frequenties op referentiedag %s", ref)
+    return ref.isoformat()
 
 
 def list_feeds(gtfs_dir: Path) -> list[str]:
@@ -156,6 +230,12 @@ class Feed:
         self.patterns = pd.read_parquet(self.dir / "patterns.parquet")
         sp = self.dir / "shapes.parquet"
         self.shapes = pd.read_parquet(sp) if sp.exists() else None
+        # frequenties (ontbreken bij feeds zonder kalender of bij een oude index)
+        rt, sd = self.dir / "route_trips.parquet", self.dir / "stop_departures.parquet"
+        self.route_trips = pd.read_parquet(rt) if rt.exists() else None
+        self.stop_departures = pd.read_parquet(sd) if sd.exists() else None
+        mf = self.dir / "meta.json"
+        self.ref_date = json.loads(mf.read_text()).get("ref_date") if mf.exists() else None
 
     def search_routes(self, q: str = "", route_types: list[int] | None = None, limit: int = 50) -> list[dict]:
         r = self.routes

@@ -140,4 +140,25 @@ def test_tiled_equals_single_run(tmp_path, cfg, demo_world):
     b = tiled.set_index("vbo_id")["inwoners"].sort_index()
     assert np.allclose(a.to_numpy(), b.reindex(a.index).to_numpy())
     assert out["report"]["by_source"] == rep1["by_source"]
+    assert np.isclose(single["inw_65plus"].sum(), tiled["inw_65plus"].sum())
     assert gpd.read_parquet(cfg.addresses_path, bbox=(143000, 476000, 143500, 476500)).shape[0] < len(tiled)
+
+
+def test_age_groups_cell_then_buurt_then_national(cfg, demo_world):
+    from ovcatch.disaggregate import add_age_groups, age_shares
+
+    vbo, grid, buurten, _ = _prep(cfg, demo_world)
+    grid["age_0_15"] = grid["inwoners"] * 0.2
+    secret = grid.index[::3]
+    grid.loc[secret, "age_0_15"] = np.nan  # leeftijd geheim, inwoners bekend
+    buurten["pct_0_15"] = 0.1
+    buurten.loc[buurten.index[0], "pct_0_15"] = np.nan  # ook buurt onbekend -> landelijk
+    out, _, _ = disaggregate(vbo, grid, buurten, cfg)
+    sh = age_shares(out, grid, buurten, cfg)["share_0_15"]
+    woon = out["is_woon"].astype(bool)
+    vals = set(np.round(sh[woon], 6))
+    assert vals <= {0.2, 0.1, round(cfg["disaggregation"]["national_age_shares"]["0_15"], 6)} and len(vals) == 3
+    out = add_age_groups(out, age_shares(out, grid, buurten, cfg))
+    assert (out["inw_0_15"] <= out["inwoners"] + 1e-9).all() and out.loc[~woon, "inw_0_15"].eq(0).all()
+    assert "inw_65plus" in out  # zonder kolommen: landelijk aandeel
+    assert np.isclose(out.loc[woon, "inw_65plus"].sum() / out.loc[woon, "inwoners"].sum(), cfg["disaggregation"]["national_age_shares"]["65plus"])

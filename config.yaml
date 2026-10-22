@@ -38,6 +38,15 @@ columns:
   cbs_buurt_naam: [buurtnaam, BU_NAAM]
   cbs_buurt_inwoners: [aantal_inwoners, AANT_INW]
   cbs_buurt_woningen: [woningvoorraad, aantal_woningen, WONINGEN]
+  # Leeftijdsgroepen (ontbreken = landelijk aandeel). Vierkant: aantallen; buurt: percentages.
+  cbs_vk_leeftijd:
+    "0_15": [aantal_inwoners_0_tot_15_jaar, INW_014]
+    "15_25": [aantal_inwoners_15_tot_25_jaar, INW_1524]
+    "65plus": [aantal_inwoners_65_jaar_en_ouder, INW_65PL]
+  cbs_buurt_leeftijd_pct:
+    "0_15": [percentage_personen_0_tot_15_jaar, P_00_14_JR]
+    "15_25": [percentage_personen_15_tot_25_jaar, P_15_24_JR]
+    "65plus": [percentage_personen_65_jaar_en_ouder, P_65_EO_JR]
 
 bag:
   # Alleen verblijfsobjecten met deze status tellen mee.
@@ -61,6 +70,8 @@ disaggregation:
   area_clip_m2: [20, 400]
   # Fallback als ook de buurt geheim is: landelijke gemiddelde huishoudensgrootte.
   national_persons_per_dwelling: 2.1
+  # Landelijk aandeel per leeftijdsgroep (CBS, 1-1-2025), als vierkant én buurt geheim zijn.
+  national_age_shares: {"0_15": 0.153, "15_25": 0.122, "65plus": 0.204}
   validation:
     tolerance: 0.10
     min_share_within: 0.90
