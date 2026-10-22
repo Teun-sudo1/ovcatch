@@ -33,6 +33,7 @@ Statische kaart op https://teun-sudo1.github.io/ovcatch/ — geen server nodig, 
 - **Per haltelocatie** (perrons met dezelfde naam binnen 250 m): inwoners, woningen, arbeidsplaatsen, voorzieningen en adressen binnen 400/800/1200 m lopen en 1,5/3 km fietsen (bruto: alles binnen bereik), plus de isochronen.
 - **Per buslijn**: dezelfde kengetallen uniek over alle haltes (elk adres één keer), en per halte.
 - Zoeken op lijnnummer, lijnnaam, vervoerder of haltenaam; deelbare links (`#lijn=…`, `#halte=…`).
+- **Bewerken** (knop bij een lijn): haltes verslepen, toevoegen (ook door op een bestaande halte te klikken), verwijderen, via-punten, en vergelijken met het origineel; CSV-export; scenario's opslaan in de browser of als JSON-bestand delen. Ongewijzigde haltes gebruiken de vooraf berekende isochronen; nieuwe/verplaatste haltes en de busroute komen van de openbare Valhalla-server van [FOSSGIS](https://valhalla1.openstreetmap.de) (gratis, fair use). Tellen gebeurt in de browser op 100m-vierkanten (`cells/`), voor origineel en variant op dezelfde manier; dat wijkt ~0,1–1% af van de telling per adres.
 
 Bijwerken (bijv. na een nieuwe GTFS-feed):
 ```bash

@@ -379,9 +379,60 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
         "router": cfg["routing"]["engine"],
         "disaggregatie": json.loads(rep_file.read_text()) if rep_file.exists() else None,
     }
+    meta |= export_cells(cfg, out)
     _dump(out / "meta.json", meta)
     log.info("Export klaar in %.0f s -> %s", time.time() - t0, out)
     return {k: meta[k] for k in ("n_haltes", "n_lijnen")} | {"seconden": round(time.time() - t0)}
+
+
+def export_cells(cfg: Config, out: Path) -> dict:
+    """100m-vierkanten met kengetallen, voor bewerken in de browser (tellen zonder server).
+
+    cells/<tx>_<ty>.json per tegel van 10 km (zelfde sleutel als iso/): middelpunt in
+    lon/lat x 1e5 en per vierkant de kengetallen in METRICS-volgorde.
+    """
+    import pyarrow.parquet as pq
+
+    from .geo import RD, WGS84, _tf
+
+    t0 = time.time()
+    (out / "cells").mkdir(parents=True, exist_ok=True)
+    # coördinaten uit de bbox-kolom: geen shapely-geometrieën nodig voor 10 mln punten
+    tab = pq.read_table(cfg.addresses_path, columns=["bbox", "inwoners", "is_woon", "banen_schatting"])
+    bb = tab.column("bbox").combine_chunks()
+    df = pd.DataFrame({
+        "cx": np.floor(bb.field("xmin").to_numpy() / 100).astype(np.int64),
+        "cy": np.floor(bb.field("ymin").to_numpy() / 100).astype(np.int64),
+        "inwoners": tab.column("inwoners").to_numpy(),
+        "woningen": tab.column("is_woon").to_numpy().astype(float),
+        "banen": tab.column("banen_schatting").to_numpy(),
+        "voorzieningen": 0.0,
+        "adressen": 1.0,
+    })
+    del tab, bb
+    if cfg.amenities_path.exists():
+        am = gpd.read_parquet(cfg.amenities_path, columns=["geometry"])
+        df = pd.concat([df, pd.DataFrame({
+            "cx": np.floor(am.geometry.x.to_numpy() / 100).astype(np.int64),
+            "cy": np.floor(am.geometry.y.to_numpy() / 100).astype(np.int64),
+            "inwoners": 0.0, "woningen": 0.0, "banen": 0.0, "voorzieningen": 1.0, "adressen": 0.0,
+        })], ignore_index=True)
+    cells = df.groupby(["cx", "cy"], sort=False)[METRICS].sum().reset_index()
+    lon, lat = _tf(RD, WGS84).transform(cells["cx"].to_numpy() * 100 + 50.0, cells["cy"].to_numpy() * 100 + 50.0)
+    cells["lon"] = np.round(lon * 1e5).astype(np.int64)
+    cells["lat"] = np.round(lat * 1e5).astype(np.int64)
+    cells["key"] = (cells["cx"] // 100).astype(str) + "_" + (cells["cy"] // 100).astype(str)
+    n_files = 0
+    for key, g in cells.groupby("key"):
+        _dump(out / "cells" / f"{key}.json", {
+            "lon": g["lon"].tolist(),
+            "lat": g["lat"].tolist(),
+            # inwoners/banen op 0,1 (vierkant-sommen van fracties), tellingen geheel
+            "v": [[round(a, 1), int(b), round(c, 1), int(d), int(e)] for a, b, c, d, e in g[METRICS].itertuples(index=False)],
+        })
+        n_files += 1
+    log.info("Vierkanten: %d in %d tegels (%.0f s)", len(cells), n_files, time.time() - t0)
+    return {"n_vierkanten": len(cells), "tegels": n_files}
 
 
 def _dump(path: Path, obj) -> None:

@@ -12,8 +12,9 @@
   const METRIC_LABEL = { inwoners: "Inwoners (geschat)", woningen: "Woningen", banen: "Arbeidsplaatsen*", voorzieningen: "Voorzieningen (OSM)", adressen: "Adressen" };
   const RAMP = ["#e3f1ec", "#a8d8c2", "#62b393", "#2a8a68", "#0b5e44"];
   const ISO_COLORS = ["#0b6e4f", "#1d4ed8", "#a21caf"];
+  const PALETTE = ["#0b6e4f", "#c2410c", "#1d4ed8", "#a21caf", "#b45309", "#0e7490", "#be123c", "#4d7c0f", "#6d28d9", "#0f766e", "#9a3412", "#334155"];
 
-  const S = { meta: null, stops: [], lines: [], mode: "walk", th: 1, stop: null, line: null, isoCache: {}, breaks: {} };
+  const S = { meta: null, stops: [], lines: [], mode: "walk", th: 1, stop: null, line: null, isoCache: {}, breaks: {}, edit: false };
 
   const fmtTh = (t) => (t >= 1000 ? `${nf1.format(t / 1000)} km` : `${t} m`);
 
@@ -104,8 +105,13 @@
         popup.setLngLat(f.geometry.coordinates).setHTML(`<b>${esc(s[0])}</b><br>${nf.format(v.inwoners)} inwoners binnen ${fmtTh(S.meta.drempels[S.mode][S.th])} ${MODE_ADJ[S.mode]}`).addTo(map);
       });
       map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; popup.remove(); });
-      map.on("click", layer, (e) => selectStop(e.features[0].properties.i, true));
+      map.on("click", layer, (e) => { if (!S.edit) selectStop(e.features[0].properties.i, true); });
     }
+    map.on("click", (e) => { if (S.edit) window.OVCEditor.onMapClick(e); });
+    window.OVCEditor.init({
+      S, map, setData, decodePolyline, isoTile, renderDetail, esc, nf, nf1, fmtTh, MODE_ADJ, MODE_LABEL, DATA,
+      color: (i) => PALETTE[i % PALETTE.length],
+    });
 
     try {
       await load();
@@ -174,7 +180,7 @@
   function refresh() {
     renderControls();
     renderDetail();
-    drawIso();
+    if (S.edit) window.OVCEditor.renderIso(); else drawIso();
   }
 
   function search() {
@@ -203,6 +209,7 @@
 
   // ---------- selectie ----------
   function selectStop(i, setHash, fly) {
+    if (S.edit) window.OVCEditor.stop();
     S.stop = i;
     const s = S.stops[i];
     setData("sel", { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [s[1], s[2]] } }] });
@@ -213,6 +220,7 @@
   }
 
   function selectLine(i, setHash) {
+    if (S.edit) window.OVCEditor.stop();
     S.line = i; S.stop = null;
     const l = S.lines[i];
     const coords = decodePolyline(l[5]);
@@ -248,12 +256,19 @@
   }
 
   // ---------- isochronen ----------
+  function isoTile(key) {
+    if (!S.isoCache[key]) {
+      S.isoCache[key] = getJSON(`iso/${key}.json`);
+      S.isoCache[key].catch(() => delete S.isoCache[key]);
+    }
+    return S.isoCache[key];
+  }
+
   async function drawIso() {
-    if (S.stop == null) { setData("iso", null); return; }
+    if (S.stop == null || S.edit) { setData("iso", null); return; }
     const i = S.stop, key = S.stops[i][5];
     try {
-      if (!S.isoCache[key]) S.isoCache[key] = getJSON(`iso/${key}.json`);
-      const tile = await S.isoCache[key];
+      const tile = await isoTile(key);
       if (S.stop !== i) return;
       const entry = (tile[String(i)] || {})[S.mode] || [];
       const features = entry.map((polys, b) => ({
@@ -292,6 +307,7 @@
   function renderDetail() {
     const el = $("detail");
     if (!S.meta) return;
+    if (S.edit) { window.OVCEditor.render(el); return; }
     const t = S.meta.drempels[S.mode][S.th];
     const within = `binnen ${fmtTh(t)} ${MODE_ADJ[S.mode]}`;
     let h = "";
@@ -301,6 +317,7 @@
       const bruto = l[3].reduce((a, s) => a + vals(S.stops[s][3], S.mode, S.th).inwoners, 0);
       h += `<button class="back" id="closeLine">× Lijn sluiten</button>
         <h2>Lijn ${esc(l[0])}</h2><div class="muted">${esc(l[2])} · ${esc(l[1])}</div>
+        <div class="row"><button id="editLine" class="primary">Bewerken: variant maken</button></div>
         <div class="res-h">Lijntotaal ${within} (uniek)</div>
         ${kpis(tot)}
         <p class="note">${l[3].length} haltes. Som per halte (bruto, met overlap): ${nf.format(bruto)} inwoners; uniek: ${nf.format(tot.inwoners)}.</p>
@@ -322,6 +339,7 @@
     h += `<p class="note">* Ruwe schatting: m² BAG-gebruiksoppervlak ÷ aanname m² per arbeidsplaats.</p>`;
     el.innerHTML = h;
     const cl = $("closeLine"); if (cl) cl.onclick = clearLine;
+    const ed = $("editLine"); if (ed) ed.onclick = () => window.OVCEditor.start(S.line);
     el.querySelectorAll("[data-line]").forEach((b) => (b.onclick = () => selectLine(Number(b.dataset.line), true)));
     el.querySelectorAll("tr[data-stop]").forEach((r) => (r.onclick = () => selectStop(Number(r.dataset.stop), true, true)));
   }

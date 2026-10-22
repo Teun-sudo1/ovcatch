@@ -60,6 +60,7 @@ Draait op deze Mac (16 GB) zonder Docker. `config.yaml` staat standaard op heel 
 | `make prepare` (133 tegels van 20 km) | 6 min | 2,8 GB | 9,7 mln objecten, 8,46 mln woningen, 43.735 voorzieningen |
 | `make valhalla-build` | 81 s | 8,6 GB | tiles.tar 945 MB |
 | `make web-export` | 15,6 min | 3,0 GB | 21.396 haltelocaties, 2.282 buslijnen, 40 MB |
+| vierkanten voor bewerken (`--cells-only`) | 4 s | 2,3 GB | 715.703 vierkanten, 23 MB |
 
 - Eerste poging `prepare` in één keer: ~9 GB, waarvan 8,3 GB in swap; na minuten geen voortgang → per tegel (zie DECISIONS.md). Gooi per tegel gelijk aan de enkele run.
 - Validatie NL: 13.202 buurten, **96,3% binnen ±10%**, p90 3,0%. Totaal 18,10 mln inwoners geschat (CBS 1-1-2025: 18,04 mln).
@@ -71,4 +72,5 @@ Draait op deze Mac (16 GB) zonder Docker. `config.yaml` staat standaard op heel 
 ## Webviewer
 - Code in `viewer/`, gepubliceerd op https://teun-sudo1.github.io/ovcatch/ via de branch `gh-pages` (`make deploy-site`).
 - Getest: bestanden via HTTP (`make serve-site`) en de viewerlogica headless (JavaScriptCore met stubs) op de NL-data: laden, kleurklassen, zoeken, halte + isochronen, lopen/fietsen, lijn met unieke totalen. Niet visueel in een browser bekeken.
+- **Bewerken in de viewer** (variant maken bij een lijn): headless getest op NL-data met gestubde routing: ongewijzigd → variant = origineel zonder serververzoeken voor isochronen; halte verslepen (2 isochroon-verzoeken), halte en via-punt toevoegen, CSV (293 regels), scenario opslaan/laden, bewerken sluiten. Gevonden en opgelost: tabel na bewerken liep uit de pas met de berekende haltes → resultaat bewaart een momentopname van de scenario's. De FOSSGIS-API zelf getest met curl (isochroon lopen/fietsen met afstandscontouren, busroute, CORS).
 - Bijwerken na een nieuwe GTFS-feed: `make download` (alleen gtfs), `make gtfs`, `make valhalla`, `make web-export`, `make deploy-site`.

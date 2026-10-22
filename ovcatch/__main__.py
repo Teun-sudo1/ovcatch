@@ -31,7 +31,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("routes"); p.add_argument("--feed", required=True); p.add_argument("--q", default="")
     p = sub.add_parser("analyse"); p.add_argument("--feed", required=True); p.add_argument("--route", required=True); p.add_argument("--out")
     sub.add_parser("validate")
-    p = sub.add_parser("web-export"); p.add_argument("--feed", default="gtfs-nl"); p.add_argument("--out"); p.add_argument("--processes", type=int)
+    p = sub.add_parser("web-export"); p.add_argument("--feed", default="gtfs-nl"); p.add_argument("--out"); p.add_argument("--processes", type=int); p.add_argument("--cells-only", action="store_true")
     sub.add_parser("demo")
     p = sub.add_parser("serve"); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8000)
     sub.add_parser("all")
@@ -82,9 +82,16 @@ def main(argv=None) -> int:
         f = cfg.processed_dir / "disaggregatie_rapport.json"
         print(f.read_text() if f.exists() else "Nog geen rapport; draai `prepare`.")
     if a.cmd == "web-export":
-        from .webexport import export_web
+        from .webexport import export_cells, export_web
 
-        print(json.dumps(export_web(cfg, a.feed, Path(a.out) if a.out else cfg.data_dir / "web", a.processes), indent=2))
+        out = Path(a.out) if a.out else cfg.data_dir / "web"
+        if a.cells_only:  # alleen de vierkanten (bewerken in de browser); meta.json bijwerken
+            res = export_cells(cfg, out)
+            meta = json.loads((out / "meta.json").read_text(encoding="utf-8"))
+            (out / "meta.json").write_text(json.dumps(meta | res, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        else:
+            res = export_web(cfg, a.feed, out, a.processes)
+        print(json.dumps(res, indent=2))
     if a.cmd == "demo":
         from .demo import build_demo
 

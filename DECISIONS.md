@@ -59,3 +59,7 @@ Format: **keuze** — reden — (alternatief).
 - **Alleen haltes binnen NL** (CBS-gemeentegrenzen + 200 m) — de OVapi-feed bevat ook België (De Lijn) en Duitsland, waar BAG/CBS ontbreekt. Lijnen met < 50% haltes in NL vallen weg.
 - **Compacte JSON + polylines (1e-5°)**; isochronen per tegel van 10 km, pas geladen bij klikken op een halte.
 - **Data op `gh-pages` als één commit zonder geschiedenis** (force push) — elke nieuwe export vervangt de vorige; `main` blijft klein.
+- **Bewerken in de browser i.p.v. eigen server** (keuze gebruiker) — blijft gratis op GitHub Pages. Isochronen: vooraf berekend voor bestaande haltes, anders de openbare FOSSGIS-Valhalla (zelfde versie 3.9.1, CORS open, max. 2 verzoeken tegelijk uit beleefdheid). Busroute idem. (Alt: FastAPI + Valhalla op een VPS, ~€10–30/mnd.)
+- **Tellen op 100m-vierkanten in de browser** — 9,7 mln adressen passen niet in een webpagina; 715.703 gevulde vierkanten (23 MB, per tegel van 10 km geladen) wel. Een vierkant telt als zijn middelpunt binnen de isochroon valt. Origineel en variant worden beide zo geteld (eerlijke vergelijking); t.o.v. adresniveau ~0,1–1% verschil (lijn 100: 25.125 vs 24.888 ≤ 400 m).
+- **Snappen**: een halte die binnen 40 m van een bestaande haltelocatie wordt neergezet, wordt die haltelocatie (vooraf berekende isochroon, geen serververzoek).
+- **Scenario's in localStorage + JSON-download** — geen backend; delen gaat via het bestand.

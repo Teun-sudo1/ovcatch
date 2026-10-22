@@ -33,7 +33,8 @@
 
     <footer class="foot">
       <p><b>Methode.</b> Bereik over het weg- en padennetwerk (Valhalla, OpenStreetMap). <b>Per halte</b> telt alles binnen bereik (bruto; buurhaltes overlappen). <b>Per lijn</b> telt elk adres één keer (uniek). Inwoners zijn een <i>schatting</i>: CBS 100m-vierkanten verdeeld over BAG-woningen. Arbeidsplaatsen zijn een <i>ruwe schatting</i> uit m² BAG-gebruiksoppervlak. Lijnen volgen het meest gereden ritpatroon.</p>
-      <p><b>Bronnen.</b> BAG (Kadaster, CC0) · CBS Vierkantstatistieken en Wijken en Buurten (CC-BY 4.0) · OpenStreetMap (ODbL) · GTFS NL (OVapi) · Achtergrond PDOK BRT.</p>
+      <p><b>Bewerken.</b> Kies een lijn en klik ‘Bewerken’ om haltes te verplaatsen, toe te voegen of te schrappen en het effect te zien. Nieuwe haltes en routes worden berekend met de openbare Valhalla-server van FOSSGIS; tellen gebeurt in je browser per 100m-vierkant.</p>
+      <p><b>Bronnen.</b> BAG (Kadaster, CC0) · CBS Vierkantstatistieken en Wijken en Buurten (CC-BY 4.0) · OpenStreetMap (ODbL) · GTFS NL (OVapi) · Routing Valhalla (FOSSGIS) · Achtergrond PDOK BRT.</p>
       <p id="meta" class="muted"></p>
       <p><a href="https://github.com/Teun-sudo1/ovcatch">Broncode en eigen analyses (ovcatch)</a></p>
     </footer>
@@ -42,6 +43,7 @@
   <div id="loading" class="loading">Haltes laden…</div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="editor.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

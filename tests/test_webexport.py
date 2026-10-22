@@ -28,3 +28,18 @@ def test_export_demo(demo_cfg, tmp_path):
         per_stop = [stops[a][3][b * n_metrics] for a in line[3]]
         assert max(per_stop) - 1 <= line[4][b * n_metrics] <= sum(per_stop) + len(per_stop)  # afronding
     assert list((out / "iso").glob("*.json"))
+
+
+def test_cells_match_address_totals(demo_cfg, tmp_path):
+    import geopandas as gpd
+
+    from ovcatch.webexport import export_cells
+
+    res = export_cells(demo_cfg, tmp_path)
+    cells = [json.loads(f.read_text()) for f in (tmp_path / "cells").glob("*.json")]
+    assert res["n_vierkanten"] == sum(len(c["v"]) for c in cells)
+    ad = gpd.read_parquet(demo_cfg.addresses_path)
+    inw = sum(v[0] for c in cells for v in c["v"])
+    assert abs(inw - ad["inwoners"].sum()) < 0.05 * len(cells[0]["v"]) + 1  # afronding op 0,1 per vierkant
+    assert sum(v[4] for c in cells for v in c["v"]) == len(ad)
+    assert sum(v[1] for c in cells for v in c["v"]) == int(ad["is_woon"].sum())
