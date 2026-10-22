@@ -4,43 +4,82 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Haltebereik NL</title>
-  <meta name="description" content="Hoeveel inwoners, woningen, banen en voorzieningen liggen binnen loop- en fietsafstand van elke bushalte en buslijn in Nederland? Vooraf berekend met open data." />
+  <meta name="description" content="Hoeveel inwoners, woningen, banen en voorzieningen liggen binnen loop- en fietsafstand van elke bushalte en buslijn in Nederland? Met frequenties, leeftijdsgroepen en lijnen bewerken in de browser." />
+  <script>
+    // thema vóór de eerste weergave zetten (voorkomt een witte flits in donkere modus)
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("ovcatch.theme"); } catch (e) { /* privévenster */ }
+      if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+    })();
+  </script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <aside id="panel">
-    <header>
-      <h1>Haltebereik NL</h1>
-      <p class="sub">Wat ligt er binnen bereik van elke bushalte en buslijn?</p>
-    </header>
-
-    <section>
-      <label class="field">Zoek een lijn of halte
-        <input id="search" type="search" placeholder="bijv. 100, Huizen of Utrecht Centraal" autocomplete="off" />
-      </label>
-      <ul id="results" class="list"></ul>
-      <div class="row">
+    <div class="top">
+      <div class="brand">
+        <div>
+          <h1>Haltebereik NL</h1>
+          <p class="sub">Wat ligt er binnen bereik van elke bushalte en buslijn?</p>
+        </div>
+        <button id="aboutBtn" class="icon-btn" title="Over deze kaart" aria-label="Over deze kaart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+        </button>
+        <button id="themeBtn" class="icon-btn" title="Licht/donker" aria-label="Wissel licht/donker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Zoek lijn of halte, bijv. 320 of Huizen" autocomplete="off" aria-label="Zoek lijn of halte" />
+        <ul id="results" class="results" role="listbox"></ul>
+      </div>
+      <div class="controls">
         <div class="seg" id="modeSeg"></div>
         <div class="seg" id="thSeg"></div>
       </div>
+      <div class="controls">
+        <span class="lbl">Kleur haltes</span>
+        <div class="seg" id="colorSeg">
+          <button data-color="inw" class="active">Inwoners</button>
+          <button data-color="dep">Vertrekken</button>
+        </div>
+      </div>
       <div id="legend" class="legend"></div>
-    </section>
+    </div>
 
-    <section id="detail">
-      <p class="muted" id="intro">Klik op een halte op de kaart of zoek een lijn. Haltes zijn gekleurd naar het aantal inwoners binnen de gekozen afstand.</p>
-    </section>
+    <div id="detail"></div>
 
-    <footer class="foot">
-      <p><b>Methode.</b> Bereik over het weg- en padennetwerk (Valhalla, OpenStreetMap). <b>Per halte</b> telt alles binnen bereik (bruto; buurhaltes overlappen). <b>Per lijn</b> telt elk adres één keer (uniek). Inwoners zijn een <i>schatting</i>: CBS 100m-vierkanten verdeeld over BAG-woningen. Arbeidsplaatsen zijn een <i>ruwe schatting</i> uit m² BAG-gebruiksoppervlak. Lijnen volgen het meest gereden ritpatroon.</p>
-      <p><b>Bewerken.</b> Kies een lijn en klik ‘Bewerken’ om haltes te verplaatsen, toe te voegen of te schrappen en het effect te zien. Nieuwe haltes en routes worden berekend met de openbare Valhalla-server van FOSSGIS; tellen gebeurt in je browser per 100m-vierkant.</p>
-      <p><b>Bronnen.</b> BAG (Kadaster, CC0) · CBS Vierkantstatistieken en Wijken en Buurten (CC-BY 4.0) · OpenStreetMap (ODbL) · GTFS NL (OVapi) · Routing Valhalla (FOSSGIS) · Achtergrond PDOK BRT.</p>
-      <p id="meta" class="muted"></p>
-      <p><a href="https://github.com/Teun-sudo1/ovcatch">Broncode en eigen analyses (ovcatch)</a></p>
-    </footer>
+    <div class="foot">
+      <span id="meta"></span>
+      <a href="https://github.com/Teun-sudo1/ovcatch">Broncode</a>
+    </div>
   </aside>
   <main id="map"></main>
   <div id="loading" class="loading">Haltes laden…</div>
+
+  <div id="about" class="about hidden" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div>
+      <div class="card-h">
+        <div><h2 id="aboutTitle">Over deze kaart</h2></div>
+        <button class="close" id="aboutClose" aria-label="Sluiten">×</button>
+      </div>
+      <h3>Wat zie je?</h3>
+      <p>Elke bushalte in Nederland met wat er binnen loop- of fietsafstand ligt <i>over het netwerk</i> (niet hemelsbreed): inwoners (ook per leeftijdsgroep), woningen, arbeidsplaatsen en voorzieningen. Per buslijn telt elk adres één keer.</p>
+      <h3>Frequentie</h3>
+      <p>Ritten en vertrekken op een gewone werkdag (de referentiedag staat onderaan), uit de dienstregeling (GTFS). Spits = 07:00–09:00. Ritten op afroep (Flex, belbus) tellen niet mee.</p>
+      <h3>Bewerken</h3>
+      <p>Kies een lijn en klik ‘Bewerken’: verplaats, voeg toe of schrap haltes, stuur de route met via-punten en vergelijk met het origineel. Nieuwe haltes en de busroute worden berekend met de openbare Valhalla-server van FOSSGIS; in bewerkmodus wordt geteld per 100m-vierkant (± 1%). Deel je variant met een link.</p>
+      <h3>Methode en kanttekeningen</h3>
+      <p>Inwoners zijn een <i>schatting</i>: CBS 100m-vierkanten verdeeld over BAG-woningen naar oppervlakte; leeftijden uit hetzelfde vierkant, anders uit de buurt. Arbeidsplaatsen zijn een <i>ruwe schatting</i> uit m² BAG-gebruiksoppervlak. Een lijn volgt het meest gereden ritpatroon; per halte telt alles binnen bereik (buurhaltes overlappen).</p>
+      <h3>Bronnen</h3>
+      <p>BAG (Kadaster, CC0) · CBS Vierkantstatistieken en Wijken en Buurten (CC-BY 4.0) · OpenStreetMap (ODbL) · GTFS NL (OVapi) · Routing Valhalla (FOSSGIS) · Achtergrond PDOK BRT (Kadaster).</p>
+      <p><a href="https://github.com/Teun-sudo1/ovcatch">Broncode, eigen analyses en methode (ovcatch)</a></p>
+    </div>
+  </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="editor.js"></script>

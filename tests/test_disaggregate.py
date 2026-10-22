@@ -148,7 +148,8 @@ def test_age_groups_cell_then_buurt_then_national(cfg, demo_world):
     from ovcatch.disaggregate import add_age_groups, age_shares
 
     vbo, grid, buurten, _ = _prep(cfg, demo_world)
-    grid["age_0_15"] = grid["inwoners"] * 0.2
+    for g, share in {"0_15": 0.2, "15_25": 0.15, "25_45": 0.3, "45_65": 0.2, "65plus": 0.15}.items():
+        grid[f"age_{g}"] = grid["inwoners"] * share  # noemer = som van alle groepen
     secret = grid.index[::3]
     grid.loc[secret, "age_0_15"] = np.nan  # leeftijd geheim, inwoners bekend
     buurten["pct_0_15"] = 0.1
@@ -160,5 +161,23 @@ def test_age_groups_cell_then_buurt_then_national(cfg, demo_world):
     assert vals <= {0.2, 0.1, round(cfg["disaggregation"]["national_age_shares"]["0_15"], 6)} and len(vals) == 3
     out = add_age_groups(out, age_shares(out, grid, buurten, cfg))
     assert (out["inw_0_15"] <= out["inwoners"] + 1e-9).all() and out.loc[~woon, "inw_0_15"].eq(0).all()
-    assert "inw_65plus" in out  # zonder kolommen: landelijk aandeel
-    assert np.isclose(out.loc[woon, "inw_65plus"].sum() / out.loc[woon, "inwoners"].sum(), cfg["disaggregation"]["national_age_shares"]["65plus"])
+    # 65+: in vierkanten met alle groepen bekend 15%, elders (geheim, geen buurtcijfer) landelijk
+    r65 = out.loc[woon, "inw_65plus"].sum() / out.loc[woon, "inwoners"].sum()
+    assert 0.15 <= r65 <= cfg["disaggregation"]["national_age_shares"]["65plus"]
+
+
+
+def test_age_shares_robust_to_cbs_rounding(cfg):
+    """CBS rondt elke leeftijdsgroep af op 5: bij 5 inwoners staat elke groep op 5. Delen door de som
+    van de groepen (niet door het inwonertal) voorkomt dat kleine vierkanten 100% per groep krijgen."""
+    import geopandas as gpd
+    from shapely.geometry import Point, box
+
+    from ovcatch.disaggregate import age_shares
+
+    vbo = gpd.GeoDataFrame({"is_woon": [True], "buurtcode": ["B1"]}, geometry=[Point(50, 50)], crs=28992)
+    grid = gpd.GeoDataFrame({"inwoners": [5.0], "age_0_15": [5.0], "age_15_25": [5.0], "age_25_45": [5.0], "age_45_65": [5.0], "age_65plus": [5.0]},
+                            geometry=[box(0, 0, 100, 100)], crs=28992)
+    buurten = gpd.GeoDataFrame({"buurtcode": ["B1"]}, geometry=[box(0, 0, 100, 100)], crs=28992)
+    sh = age_shares(vbo, grid, buurten, cfg)
+    assert np.allclose(sh.iloc[0].to_numpy(), 0.2)

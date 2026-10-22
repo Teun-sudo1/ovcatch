@@ -14,7 +14,7 @@
   const STORE_KEY = "ovcatch.scenarios";
 
   let O; // gedeelde helpers uit app.js
-  const E = { base: null, variant: null, res: null, tool: "move", markers: [], busy: false, stale: true, msg: "", err: false };
+  const E = { base: null, variant: null, res: null, tool: "move", markers: [], busy: false, stale: true, msg: "", err: false, shareUrl: null };
   const isoMem = new Map();
   const cellMem = new Map();
 
@@ -234,6 +234,7 @@
       // dir: 0 = alleen heen, 1 = alleen terug, 2 = beide (oudere data zonder richting: beide)
       stops: l[3].map((a, n) => ({ id: `a${a}`, name: O.S.stops[a][0], lon: O.S.stops[a][1], lat: O.S.stops[a][2], area: a, dir: l[6] ? l[6][n] : 2 })),
       vias: [], geometry: O.decodePolyline(l[5]), modified: false,
+      trips: l[7] ? l[7][0] : null, // ritten per werkdag (beide richtingen)
     };
   }
   function nearestArea(p) {
@@ -249,8 +250,9 @@
   function start(li) {
     E.base = fromLine(li);
     E.variant = { ...clone(E.base), name: `Lijn ${O.S.lines[li][0]} (variant)` };
-    E.res = null; E.stale = true; E.msg = ""; E.err = false;
+    E.res = null; E.stale = true; E.msg = ""; E.err = false; E.shareUrl = null;
     O.S.edit = true;
+    O.map.setLayoutProperty("line", "visibility", "none");
     O.setData("iso", null); O.setData("sel", null);
     O.map.setLayoutProperty("line-stops", "visibility", "none");
     O.map.setLayoutProperty("line-stops-lbl", "visibility", "none");
@@ -265,6 +267,9 @@
     E.markers.forEach((m) => m.remove()); E.markers = [];
     for (const id of ["edit-base-route", "edit-base-stops", "edit-var-route", "edit-iso"]) O.setData(id, null);
     O.map.setLayoutProperty("line-stops", "visibility", "visible");
+    O.map.setLayoutProperty("line", "visibility", "visible");
+    E.shareUrl = null;
+    if (/[#&]v=/.test(location.hash)) O.setHashState();
     O.map.setLayoutProperty("line-stops-lbl", "visibility", "visible");
     O.map.setPaintProperty("stops", "circle-opacity", 1);
     O.map.setPaintProperty("stops", "circle-stroke-opacity", 1);
@@ -338,6 +343,7 @@
   function edited() {
     E.variant.modified = true;
     E.stale = true;
+    E.shareUrl = null; // oude link hoort bij de vorige versie
     renderMap();
     O.renderDetail();
     clearTimeout(rerouteTimer);
@@ -466,13 +472,25 @@
       const bi = new Set(b.stops.map((s) => s.id)), vi = new Set(v.stops.map((s) => s.id));
       return { removed: [...bi].filter((x) => !vi.has(x)).length, added: [...vi].filter((x) => !bi.has(x)).length, moved: v.stops.filter((s) => s.moved && bi.has(s.id)).length };
     })();
-    let h = `<button class="back" id="edClose">× Bewerken sluiten</button>
-      <h2>${O.esc(v.name)}</h2>
-      <div class="muted">Origineel: ${O.esc(b.name)} · ${b.stops.length} haltes</div>
+    const hasTrips = b.trips != null && b.trips > 0;
+    let h = `<div class="card">
+      <div class="card-h"><div><h2>${O.esc(v.name)}</h2>
+        <div class="meta">Origineel ${b.stops.length} haltes → variant ${v.stops.length}: ${changes.added} nieuw · ${changes.removed} vervallen · ${changes.moved} verplaatst · ${v.vias.length} via</div></div>
+        <button class="close" id="edClose" title="Bewerken sluiten" aria-label="Bewerken sluiten">×</button></div>
+
+      <div class="sec"><span class="step">1</span>Bewerken</div>
       <div class="tools">${tools.map(([k, l]) => `<button data-tool="${k}" class="tool${E.tool === k ? " active" : ""}">${l}</button>`).join("")}</div>
       <p class="hint">${hints[E.tool]}</p>
-      <div class="row"><button id="edReset">Reset naar origineel</button><button id="edRun" class="primary"${E.busy ? " disabled" : ""}>${E.busy ? "Bezig…" : "Bereken"}</button></div>
-      <p class="note">Variant: ${v.stops.length} haltes · ${changes.added} nieuw · ${changes.removed} vervallen · ${changes.moved} verplaatst · ${v.vias.length} via-punten</p>
+      <div class="row"><button id="edReset">Reset naar origineel</button></div>
+
+      <div class="sec"><span class="step">2</span>Frequentie (ritten per werkdag)</div>
+      <div class="row">
+        <span class="muted" style="font-size:12.5px">Origineel <b style="color:var(--ink)">${hasTrips ? O.nf.format(b.trips) : "onbekend"}</b></span>
+        <label class="muted" style="font-size:12.5px;margin-left:auto">Variant <input id="edTrips" class="num-in" type="number" min="0" step="1" value="${v.trips ?? ""}" placeholder="${hasTrips ? b.trips : "aantal"}" /></label>
+      </div>
+
+      <div class="sec"><span class="step">3</span>Berekenen</div>
+      <button id="edRun" class="primary" style="width:100%"${E.busy ? " disabled" : ""}>${E.busy ? "Bezig…" : E.res ? "Opnieuw berekenen" : "Bereken bereik"}</button>
       <div id="edStatus" class="status${E.err ? " err" : ""}">${O.esc(E.msg)}</div>`;
 
     if (E.res) {
@@ -480,44 +498,62 @@
       const kv = (arr) => Object.fromEntries(K.map((k, i) => [k, arr[i]]));
       const lb = kv(rb.line[th]), lv = kv(rv.line[th]);
       const within = `binnen ${O.fmtTh(t)} ${O.MODE_ADJ[m]}`;
-      const kpi = (label, vv, bb, digits) => `<div class="kpi"><div class="lbl">${label}</div><div class="val">${(digits ? O.nf1 : O.nf).format(vv)}</div><div class="cmp">origineel ${(digits ? O.nf1 : O.nf).format(bb)} · ${delta(bb, vv, digits)}</div></div>`;
-      const routeKpis = E.res.base.route && E.res.variant.route
-        ? kpi("Routelengte (km)", E.res.variant.route.length_m / 1000, E.res.base.route.length_m / 1000, 1) + kpi("Rijtijd (min, geschat)", E.res.variant.route.duration_s / 60, E.res.base.route.duration_s / 60, 1)
+      const kpi = (label, vv, bb, digits, cls = "") => `<div class="kpi ${cls}"><div class="lbl">${label}</div><div class="val">${(digits ? O.nf1 : O.nf).format(vv)}</div><div class="cmp">origineel ${(digits ? O.nf1 : O.nf).format(bb)} · ${delta(bb, vv, digits)}</div></div>`;
+      const rB = E.res.base.route, rV = E.res.variant.route;
+      const routeKpis = rB && rV ? kpi("Routelengte (km)", rV.length_m / 1000, rB.length_m / 1000, 1) + kpi("Rijtijd (min)", rV.duration_s / 60, rB.duration_s / 60, 1) : "";
+      const tb = E.res.baseSc.trips, tv = E.res.varSc.trips ?? tb;
+      const freqKpi = tb > 0 && tv != null
+        ? kpi("Bereik × frequentie (inwoner-ritten per werkdag)", lv.inwoners * tv, lb.inwoners * tb, 0, "wide")
         : "";
-      h += `${E.stale ? '<p class="banner">Gewijzigd na de laatste berekening — klik ‘Bereken’.</p>' : ""}
-        <div class="res-h">Lijntotaal ${within} (uniek)</div>
-        <div class="kpis">${kpi("Inwoners (geschat)", lv.inwoners, lb.inwoners)}${kpi("Woningen", lv.woningen, lb.woningen)}${kpi("Arbeidsplaatsen*", lv.banen, lb.banen)}${kpi("Voorzieningen (OSM)", lv.voorzieningen, lb.voorzieningen)}${routeKpis}</div>
-        <label class="check"><input type="checkbox" id="edShowIso" checked /> isochronen variant tonen</label>
-        <div class="res-h">Per halte — variant ${within} (bruto)</div>
-        <table><thead><tr><th>Halte</th><th>Inwoners</th><th>Woningen</th><th>Banen*</th><th>Voorz.</th></tr></thead><tbody>
-        ${E.res.varSc.stops.map((s, i) => { const x = kv(rv.perStop[i][th]); return `<tr><td><span class="sw" style="background:${O.color(i)}"></span>${i + 1}. ${O.esc(s.name)}${s.area == null ? " <i>(nieuw)</i>" : s.moved ? " <i>(verplaatst)</i>" : ""}</td><td>${O.nf.format(x.inwoners)}</td><td>${O.nf.format(x.woningen)}</td><td>${O.nf.format(x.banen)}</td><td>${O.nf.format(x.voorzieningen)}</td></tr>`; }).join("")}
-        </tbody></table>
+      const ageRows = ["inw_0_15", "inw_15_25", "inw_65plus"].filter((k) => k in lv)
+        .map((k) => `<tr><td>${O.METRIC_LABEL[k]}</td><td>${O.nf.format(lb[k])}</td><td>${O.nf.format(lv[k])}</td><td>${delta(lb[k], lv[k])}</td></tr>`).join("");
+      h += `${E.stale ? '<p class="banner">Gewijzigd na de laatste berekening — klik ‘Opnieuw berekenen’.</p>' : ""}
+        <div class="sec">Lijntotaal ${within} · uniek</div>
+        <div class="kpis">${kpi("Inwoners (geschat)", lv.inwoners, lb.inwoners)}${kpi("Woningen", lv.woningen, lb.woningen)}${kpi("Arbeidsplaatsen*", lv.banen, lb.banen)}${kpi("Voorzieningen (OSM)", lv.voorzieningen, lb.voorzieningen)}${routeKpis}${freqKpi}</div>
+        ${ageRows ? `<div class="sec">Leeftijd</div><table><thead><tr><th></th><th>Origineel</th><th>Variant</th><th>Verschil</th></tr></thead><tbody>${ageRows}</tbody></table>` : ""}
+        <div class="row"><label class="check"><input type="checkbox" id="edShowIso" checked /> isochronen variant op de kaart</label></div>
+        <details><summary>Per halte — variant (${within}, bruto)</summary>
+        <table><thead><tr><th>Halte</th><th>Inwoners</th><th>65+</th><th>Banen*</th></tr></thead><tbody>
+        ${E.res.varSc.stops.map((s, i) => { const x = kv(rv.perStop[i][th]); return `<tr><td><span class="sw" style="background:${O.color(i)}"></span>${i + 1}. ${O.esc(s.name)}${s.area == null ? " <i>(nieuw)</i>" : s.moved ? " <i>(verplaatst)</i>" : ""}</td><td>${O.nf.format(x.inwoners)}</td><td>${O.nf.format(x.inw_65plus || 0)}</td><td>${O.nf.format(x.banen)}</td></tr>`; }).join("")}
+        </tbody></table></details>
         <details><summary>Alle afstanden (lijntotaal)</summary><table><thead><tr><th></th><th>Origineel</th><th>Variant</th><th>Verschil</th></tr></thead><tbody>
         ${meta.modi.map((mm) => meta.drempels[mm].map((tt, bi) => { const x = kv(E.res.base.modes[mm].line[bi]), y = kv(E.res.variant.modes[mm].line[bi]); return `<tr><td>Inwoners, ${O.MODE_LABEL[mm].toLowerCase()} ${O.fmtTh(tt)}</td><td>${O.nf.format(x.inwoners)}</td><td>${O.nf.format(y.inwoners)}</td><td>${delta(x.inwoners, y.inwoners)}</td></tr>`; }).join("")).join("")}
         </tbody></table></details>
-        <div class="row"><button id="edCsv">Exporteer vergelijking (CSV)</button></div>
-        <p class="note">Bewerkmodus telt per 100m-vierkant (middelpunt binnen bereik), origineel en variant op dezelfde manier; daardoor kan het origineel iets afwijken van de lijnweergave (die telt per adres). Routing voor nieuwe/verplaatste haltes en de busroute: Valhalla via FOSSGIS (openbare server).</p>`;
+        <p class="note">Geteld per 100m-vierkant, origineel en variant op dezelfde manier (± 1% t.o.v. de telling per adres). Routing nieuwe/verplaatste haltes en busroute: Valhalla (FOSSGIS).${freqKpi ? " Bereik × frequentie = unieke inwoners × ritten per werkdag." : ""}</p>`;
     } else if (!E.busy) {
-      h += `<p class="note">Bewerk de variant en klik ‘Bereken’. Ongewijzigde haltes zijn direct beschikbaar; nieuwe of verplaatste haltes worden online berekend (enkele seconden per halte).</p>`;
+      h += `<p class="note">Ongewijzigde haltes zijn direct beschikbaar; nieuwe of verplaatste haltes worden online berekend (enkele seconden per halte).</p>`;
     }
-    h += `<div class="res-h">Scenario’s</div>
-      <div class="row"><input id="edName" placeholder="Naam scenario" value="${O.esc(v.name)}" /><button id="edSave">Opslaan</button></div>
-      <div class="row"><select id="edList"><option value="">Opgeslagen scenario laden…</option>${Object.keys(loadAll()).map((n) => `<option>${O.esc(n)}</option>`).join("")}</select><button id="edLoad">Laden</button><button id="edDel" title="Verwijderen">✕</button></div>
-      <div class="row"><button id="edDownload">Download (JSON)</button><label class="filebtn">Open bestand…<input id="edUpload" type="file" accept=".json,application/json" hidden /></label></div>
-      <p class="note">Opgeslagen in deze browser. Delen: download het JSON-bestand en laat de ander het openen.</p>`;
+    h += `<div class="sec"><span class="step">4</span>Delen en opslaan</div>
+      <div class="row"><button id="edShare" class="primary">Deel link</button>${E.res ? '<button id="edCsv">CSV-export</button>' : ""}</div>
+      ${E.shareUrl ? `<div class="share"><input id="edShareUrl" readonly value="${O.esc(E.shareUrl)}" /><button id="edCopy">Kopieer</button></div>` : ""}
+      <details><summary>Opslaan in deze browser of als bestand</summary>
+        <div class="row"><input id="edName" placeholder="Naam scenario" value="${O.esc(v.name)}" /><button id="edSave">Opslaan</button></div>
+        <div class="row"><select id="edList"><option value="">Opgeslagen scenario laden…</option>${Object.keys(loadAll()).map((n) => `<option>${O.esc(n)}</option>`).join("")}</select><button id="edLoad">Laden</button><button id="edDel" title="Verwijderen">✕</button></div>
+        <div class="row"><button id="edDownload">Download (JSON)</button><label class="filebtn">Open bestand…<input id="edUpload" type="file" accept=".json,application/json" hidden /></label></div>
+      </details>
+    </div>`;
     el.innerHTML = h;
 
     $("edClose").onclick = stop;
     el.querySelectorAll("[data-tool]").forEach((x) => (x.onclick = () => setTool(x.dataset.tool)));
-    $("edReset").onclick = () => { E.variant = { ...clone(E.base), name: E.variant.name }; E.stale = true; renderMap(); O.renderDetail(); };
+    $("edReset").onclick = () => { E.variant = { ...clone(E.base), name: E.variant.name }; E.stale = true; E.shareUrl = null; renderMap(); O.renderDetail(); };
+    $("edTrips").onchange = () => {
+      const x = $("edTrips").value.trim();
+      E.variant.trips = x === "" ? null : Math.max(0, Math.round(Number(x)));
+      E.shareUrl = null;
+      if (E.res) { E.res.varSc.trips = E.variant.trips; } // frequentie verandert geen bereik: direct bijwerken
+      O.renderDetail();
+    };
     $("edRun").onclick = run;
     if ($("edShowIso")) $("edShowIso").onchange = renderIso;
     if ($("edCsv")) $("edCsv").onclick = exportCsv;
+    $("edShare").onclick = share;
+    if ($("edCopy")) $("edCopy").onclick = () => copy(E.shareUrl);
     $("edSave").onclick = () => {
       const n = $("edName").value.trim() || E.variant.name;
       E.variant.name = n;
       const all = loadAll(); all[n] = { base: E.base, variant: E.variant };
-      try { localStorage.setItem(STORE_KEY, JSON.stringify(all)); status(`Scenario '${n}' opgeslagen in deze browser.`); } catch (e) { status("Opslaan in de browser lukt niet (privévenster?). Gebruik Download.", true); }
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(all)); status(`Scenario '${n}' opgeslagen in deze browser.`); } catch (e) { status("Opslaan in de browser lukt niet (privévenster?). Gebruik Download of Deel link.", true); }
       O.renderDetail();
     };
     $("edLoad").onclick = () => { const n = $("edList").value; const sc = loadAll()[n]; if (sc) applyScenario(sc); };
@@ -538,9 +574,12 @@
   function loadAll() { try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}"); } catch (e) { return {}; } }
   function applyScenario(sc) {
     E.base = sc.base; E.variant = sc.variant; E.variant.vias = E.variant.vias || [];
-    E.res = null; E.stale = true;
+    E.res = null; E.stale = true; E.shareUrl = null;
     status(`Scenario '${E.variant.name}' geladen.`);
     renderMap(); O.renderDetail();
+    fitVariant();
+  }
+  function fitVariant() {
     const pts = E.variant.stops.map(xy);
     if (pts.length) { const bb = new maplibregl.LngLatBounds(pts[0], pts[0]); pts.forEach((p) => bb.extend(p)); O.map.fitBounds(bb, { padding: 60 }); }
   }
@@ -553,6 +592,76 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // ---------- deellink ----------
+  // #v=<code>: de variant t.o.v. de lijn in de huidige data. Haltes: index (ongewijzigd),
+  // [index, lon, lat] (verplaatst) of [lon, lat, naam] (nieuw). Gecomprimeerd waar de browser dat kan.
+  const r5 = (x) => Math.round(x * 1e5) / 1e5;
+  const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64url = (s) => {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(s + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  };
+  async function packLink(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    if (typeof CompressionStream === "undefined") return "j" + b64url(bytes);
+    const out = await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer();
+    return "z" + b64url(new Uint8Array(out));
+  }
+  async function unpackLink(code) {
+    let bytes = unb64url(code.slice(1));
+    if (code[0] === "z") bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  async function share() {
+    const v = E.variant, l = O.S.lines[v.line];
+    const obj = {
+      d: O.dataVersion(), l: v.line, k: [l[0], l[2], l[1]], n: v.name, t: v.trips ?? null,
+      s: v.stops.map((s) => (s.area != null && !s.moved ? s.area : s.area != null ? [s.area, r5(s.lon), r5(s.lat)] : [r5(s.lon), r5(s.lat), s.name])),
+      v: (v.vias || []).map((x) => [x.after, r5(x.lon), r5(x.lat)]),
+    };
+    const code = await packLink(obj);
+    O.setHashState(`v=${code}`);
+    E.shareUrl = location.href;
+    O.renderDetail();
+    copy(E.shareUrl);
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); status("Link gekopieerd. Wie hem opent, ziet deze variant en kan verder bewerken."); }
+    catch (e) { status("Kopieer de link hieronder."); const i = $("edShareUrl"); if (i) i.select(); }
+  }
+  async function fromLink(code) {
+    let obj;
+    try { obj = await unpackLink(code); } catch (e) { status("Deze link is onleesbaar (afgekapt bij het kopiëren?).", true); return; }
+    const lines = O.S.lines;
+    const same = (i) => lines[i] && lines[i][0] === obj.k[0] && lines[i][2] === obj.k[1] && lines[i][1] === obj.k[2];
+    const li = same(obj.l) ? obj.l : lines.findIndex((_, i) => same(i));
+    if (li < 0) { O.S.edit = false; return; }
+    O.selectLine(li, false);
+    start(li);
+    if (obj.d !== O.dataVersion()) {
+      status("Deze link is gemaakt met een oudere versie van de data; de lijn is als origineel geladen. Bewerk opnieuw.", true);
+      O.renderDetail();
+      return;
+    }
+    const dirOf = new Map(E.base.stops.map((s) => [s.area, s.dir]));
+    E.variant = {
+      ...clone(E.base), name: obj.n || E.variant.name, trips: obj.t ?? null, modified: true,
+      stops: obj.s.map((x, i) => {
+        if (typeof x === "number") { const st = O.S.stops[x]; return { id: `a${x}`, name: st[0], lon: st[1], lat: st[2], area: x, dir: dirOf.get(x) }; }
+        if (typeof x[2] === "string") return { id: `nieuw_link${i}`, name: x[2], lon: x[0], lat: x[1], area: null, moved: true };
+        const st = O.S.stops[x[0]];
+        return { id: `a${x[0]}`, name: st[0], lon: x[1], lat: x[2], area: x[0], dir: dirOf.get(x[0]), moved: true };
+      }),
+      vias: obj.v.map((x) => ({ after: x[0], lon: x[1], lat: x[2] })),
+    };
+    E.shareUrl = location.href;
+    renderMap();
+    fitVariant();
+    status("Gedeelde variant geladen; bereik wordt berekend…");
+    reroute();
+    run();
+  }
+
   function exportCsv() {
     const S = O.S, meta = S.meta, K = meta.kengetallen;
     const num = (x, d = 0) => (Math.round(x * 10 ** d) / 10 ** d).toString().replace(".", ",");
@@ -562,21 +671,36 @@
       const x = E.res.base.modes[m].line[b][i], y = E.res.variant.modes[m].line[b][i];
       rows.push([m, t, k, num(x), num(y), num(y - x), pct(x, y)].join(";"));
     }));
-    rows.push("", "# Route", "kengetal;origineel;variant");
+    rows.push("", "# Route en frequentie", "kengetal;origineel;variant");
     const rb = E.res.base.route, rv = E.res.variant.route;
+    const tb = E.res.baseSc.trips, tv = E.res.varSc.trips ?? tb;
     rows.push(`lengte_m;${rb ? num(rb.length_m) : ""};${rv ? num(rv.length_m) : ""}`, `rijtijd_s;${rb ? num(rb.duration_s) : ""};${rv ? num(rv.duration_s) : ""}`, `haltes;${E.res.baseSc.stops.length};${E.res.varSc.stops.length}`);
+    if (tb != null) {
+      rows.push(`ritten_per_werkdag;${tb};${tv ?? ""}`);
+      for (const m of meta.modi) meta.drempels[m].forEach((t, b) => {
+        rows.push(`inwoner_ritten_${m}_${t};${num(E.res.base.modes[m].line[b][0] * tb)};${tv != null ? num(E.res.variant.modes[m].line[b][0] * tv) : ""}`);
+      });
+    }
     rows.push("", "# Per halte (bruto: alles binnen bereik van die halte)", ["scenario", "halte", "status", "lon", "lat", "modus", "drempel_m", ...K].join(";"));
     for (const [label, sc, r] of [["origineel", E.res.baseSc, E.res.base], ["variant", E.res.varSc, E.res.variant]]) {
       sc.stops.forEach((s, si) => meta.modi.forEach((m) => meta.drempels[m].forEach((t, b) => {
         const st = s.area == null ? "nieuw" : s.moved ? "verplaatst" : "bestaand";
-        rows.push([label, `"${s.name.replace(/"/g, '""')}"`, st, num(s.lon, 6), num(s.lat, 6), m, t, ...r.modes[m].perStop[si][b].map((x) => num(x))].join(";"));
+        rows.push([label, `"${s.name.replace(/"/g, '""')}"`, st, num(s.lon, 6), num(s.lat, 6), m, t, ...r.modes[m].perStop[si][b].map((x) => num(x, 1))].join(";"));
       })));
     }
-    rows.push("", "# Inwoners: CBS 100m-vierkanten verdeeld over BAG-woningen (schatting). Arbeidsplaatsen: ruwe schatting uit m² BAG.");
+    rows.push("", "# Inwoners: CBS 100m-vierkanten verdeeld over BAG-woningen (schatting), leeftijden uit vierkant of buurt. Arbeidsplaatsen: ruwe schatting uit m² BAG.");
     download(`ov-catchment-${(E.variant.name || "variant").replace(/[^\w-]+/g, "_")}.csv`, "﻿" + rows.join("\r\n"), "text/csv;charset=utf-8");
   }
 
   // ---------- koppeling met app.js ----------
+  function applyTheme() {
+    const c = O.themeColors(), map = O.map;
+    map.setPaintProperty("edit-base-route", "line-color", c.grey);
+    map.setPaintProperty("edit-var-route", "line-color", c.accent);
+    map.setPaintProperty("edit-base-stops", "circle-color", c.panel);
+    map.setPaintProperty("edit-base-stops", "circle-stroke-color", c.grey);
+  }
+
   window.OVCEditor = {
     init(shared) {
       O = shared;
@@ -584,10 +708,11 @@
       for (const id of ["edit-iso", "edit-base-route", "edit-base-stops", "edit-var-route"]) map.addSource(id, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
       map.addLayer({ id: "edit-iso-fill", type: "fill", source: "edit-iso", paint: { "fill-color": ["get", "color"], "fill-opacity": 0.1 } }, "stops");
       map.addLayer({ id: "edit-iso-line", type: "line", source: "edit-iso", paint: { "line-color": ["get", "color"], "line-width": 1.2, "line-opacity": 0.8 } }, "stops");
-      map.addLayer({ id: "edit-base-route", type: "line", source: "edit-base-route", paint: { "line-color": "#7a7f87", "line-width": 4, "line-opacity": 0.7, "line-dasharray": [1.5, 1.2] } });
-      map.addLayer({ id: "edit-var-route", type: "line", source: "edit-var-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#0b6e4f", "line-width": 4.5, "line-opacity": 0.9 } });
-      map.addLayer({ id: "edit-base-stops", type: "circle", source: "edit-base-stops", paint: { "circle-radius": 5, "circle-color": "#fff", "circle-stroke-color": "#7a7f87", "circle-stroke-width": 2.5 } });
+      map.addLayer({ id: "edit-base-route", type: "line", source: "edit-base-route", paint: { "line-width": 4, "line-opacity": 0.7, "line-dasharray": [1.5, 1.2] } });
+      map.addLayer({ id: "edit-var-route", type: "line", source: "edit-var-route", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-width": 4.5, "line-opacity": 0.9 } });
+      map.addLayer({ id: "edit-base-stops", type: "circle", source: "edit-base-stops", paint: { "circle-radius": 5, "circle-stroke-width": 2.5 } });
+      applyTheme();
     },
-    start, stop, render, renderIso, onMapClick, setTool,
+    start, stop, render, renderIso, onMapClick, setTool, applyTheme, fromLink,
   };
 })();

@@ -194,16 +194,19 @@ def disaggregate(
 
 
 def age_shares(vbo: gpd.GeoDataFrame, grid: gpd.GeoDataFrame, buurten: pd.DataFrame, cfg: Config) -> pd.DataFrame:
-    """Aandeel per leeftijdsgroep per woonobject: vierkant (aantal/inwoners), anders buurtpercentage,
-    anders landelijk. Per groep apart: CBS maakt een groep in een vierkant soms geheim en de rest niet.
-    Kolommen share_<groep>; werkt per tegel (vierkanten van die tegel)."""
+    """Aandeel per leeftijdsgroep per woonobject: vierkant, anders buurtpercentage, anders landelijk.
+
+    Vierkant: groep / som van álle leeftijdsgroepen (CBS rondt elke groep af op 5; delen door het
+    inwonertal zou kleine vierkanten systematisch overschatten), alleen als alle groepen bekend zijn.
+    Kolommen share_<groep> voor de groepen in national_age_shares; werkt per tegel."""
     nat = cfg["disaggregation"].get("national_age_shares", {})
     out = pd.DataFrame(index=vbo.index)
     if not nat:
         return out
     woon = vbo[vbo["is_woon"].astype(bool)]
-    cols = [f"age_{g}" for g in nat if f"age_{g}" in grid.columns]
-    cell = _assign_poly(woon, grid, ["inwoners", *cols]) if len(woon) else pd.DataFrame(index=woon.index)
+    cols = [c for c in grid.columns if c.startswith("age_")]
+    cell = _assign_poly(woon, grid, cols) if len(woon) and cols else pd.DataFrame(index=woon.index)
+    denom = cell[cols].sum(axis=1, min_count=len(cols)).to_numpy(dtype=float) if len(cell.columns) else None
     bt = buurten.set_index("buurtcode")
     code = woon["buurtcode"]
     for g, share in nat.items():
@@ -212,8 +215,7 @@ def age_shares(vbo: gpd.GeoDataFrame, grid: gpd.GeoDataFrame, buurten: pd.DataFr
             b = bt[f"pct_{g}"].reindex(code).to_numpy()
             s = s.where(np.isnan(b), b)
         if f"age_{g}" in cell.columns:
-            inw = cell["inwoners"].to_numpy(dtype=float)
-            c = cell[f"age_{g}"].to_numpy(dtype=float) / np.where(inw > 0, inw, np.nan)
+            c = cell[f"age_{g}"].to_numpy(dtype=float) / np.where(denom > 0, denom, np.nan)
             s = s.where(np.isnan(c), np.clip(c, 0, 1))
         out[f"share_{g}"] = 0.0
         out.loc[woon.index, f"share_{g}"] = s.to_numpy()

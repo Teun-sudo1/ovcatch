@@ -42,6 +42,8 @@ columns:
   cbs_vk_leeftijd:
     "0_15": [aantal_inwoners_0_tot_15_jaar, INW_014]
     "15_25": [aantal_inwoners_15_tot_25_jaar, INW_1524]
+    "25_45": [aantal_inwoners_25_tot_45_jaar, INW_2544]
+    "45_65": [aantal_inwoners_45_tot_65_jaar, INW_4564]
     "65plus": [aantal_inwoners_65_jaar_en_ouder, INW_65PL]
   cbs_buurt_leeftijd_pct:
     "0_15": [percentage_personen_0_tot_15_jaar, P_00_14_JR]
