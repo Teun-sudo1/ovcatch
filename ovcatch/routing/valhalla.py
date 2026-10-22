@@ -14,6 +14,9 @@ log = logging.getLogger(__name__)
 COSTING = {"walk": "pedestrian", "bike": "bicycle"}
 FALLBACK_KMH = {"walk": 5.0, "bike": 15.0}
 MAX_CONTOURS = 4
+# Haltes liggen vaak tussen twee rijbanen (gemiddelde van perrons): alle wegen binnen deze
+# straal zijn kandidaat, zodat de route niet omrijdt naar de 'verkeerde' rijbaan.
+ROUTE_RADIUS_M = 25
 
 
 def decode_polyline6(s: str) -> list[list[float]]:
@@ -104,7 +107,7 @@ class ValhallaRouter(Router):
             return RouteResult([list(p) for p in points], 0.0, 0.0)
         break_mask = break_mask or [True] * len(points)
         locs = [
-            {"lon": p[0], "lat": p[1], "type": "break" if (b or i in (0, len(points) - 1)) else "through"}
+            {"lon": p[0], "lat": p[1], "type": "break" if (b or i in (0, len(points) - 1)) else "through", "radius": ROUTE_RADIUS_M}
             for i, (p, b) in enumerate(zip(points, break_mask))
         ]
         data = self._post(

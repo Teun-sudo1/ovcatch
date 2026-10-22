@@ -94,15 +94,20 @@ def bus_lines(feed: Feed, route_types: list[int], merge_m: float, quay_area: dic
         except Exception as e:  # noqa: BLE001 - kapotte lijn in de feed mag de export niet stoppen
             log.warning("Lijn %s overgeslagen: %s", r.route_id, e)
             continue
-        areas = []
+        areas, dirs = [], {}
         for s in ln["stops"]:
             a = next((quay_area[m] for m in s["members"] if m in quay_area), None)
-            if a is not None and a not in areas:
+            if a is None:
+                continue
+            if a not in areas:
                 areas.append(a)
+            dirs.setdefault(a, set()).update(s.get("dirs") or (0, 1))
         if len(areas) < 2:
             continue
         out.append({"route_id": r.route_id, "short": str(r.route_short_name or ""), "long": str(r.route_long_name or ""),
                     "agency": r.agency_name if isinstance(r.agency_name, str) else "", "areas": areas, "geometry": ln["geometry"],
+                    # per halte: 0 = alleen heen, 1 = alleen terug, 2 = beide
+                    "dirs": [2 if len(dirs[a]) == 2 else next(iter(dirs[a])) for a in areas],
                     "share_in_region": len(areas) / len(ln["stops"])})
     return out
 
@@ -347,11 +352,11 @@ def export_web(cfg: Config, feed_name: str, out: Path, processes: int | None = N
         geom = ln["geometry"]
         if len(geom) > 2:
             geom = list(shapely.simplify(LineString(geom), 0.00005).coords)  # ~5 m
-        line_rows.append([ln["short"], ln["long"], ln["agency"], ln["areas"], vals, encode_polyline(geom)])
+        line_rows.append([ln["short"], ln["long"], ln["agency"], ln["areas"], vals, encode_polyline(geom), ln["dirs"]])
 
     thresholds = {m: [int(t) for t in cfg["thresholds"][m]] for m in modes}
     _dump(out / "stops.json", {"columns": ["naam", "lon", "lat", "waarden", "lijnen", "iso"], "rows": stops_rows})
-    _dump(out / "lines.json", {"columns": ["nummer", "naam", "vervoerder", "haltes", "waarden", "route"], "rows": line_rows})
+    _dump(out / "lines.json", {"columns": ["nummer", "naam", "vervoerder", "haltes", "waarden", "route", "richting"], "rows": line_rows})
 
     iso_tiles = defaultdict(dict)
     for i, (x, y) in enumerate(zip(areas["x"], areas["y"])):

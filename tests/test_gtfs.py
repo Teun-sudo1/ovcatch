@@ -62,3 +62,27 @@ def test_same_name_platforms_across_junction_merge(cfg):
     s1 = [{"stop_id": "b", "name": "Orionlaan", "lon": 5.1930, "lat": 52.2300}]  # ~205 m oostelijk
     out = merge_directions(s0, s1, [[5.18, 52.23], [5.20, 52.23]], cfg["line"]["merge_distance_m"])
     assert len(out) == 1 and out[0]["members"] == ["a", "b"]
+
+
+def test_build_line_marks_directions(demo_cfg):
+    f = Feed(demo_cfg.gtfs_dir / "demo_2024_oud")
+    line = f.build_line("R1", demo_cfg["line"]["merge_distance_m"])
+    assert all(s["dirs"] == [0, 1] for s in line["stops"])
+
+
+def test_route_points_skip_return_only_stops():
+    """Een halte die alleen in de terugrichting ligt hoort niet in de gereden route (wel in het bereik)."""
+    from ovcatch.analysis import route_points
+
+    sc = {
+        "stops": [
+            {"lon": 5.0, "lat": 52.0, "dirs": [0, 1]},
+            {"lon": 5.1, "lat": 52.0, "dirs": [1]},  # perron aan de overkant
+            {"lon": 5.11, "lat": 52.0, "dirs": [0]},
+            {"lon": 5.2, "lat": 52.0},  # nieuwe halte: geen richting -> altijd mee
+        ],
+        "vias": [{"after": 1, "lon": 5.15, "lat": 52.01}],
+    }
+    pts, mask = route_points(sc)
+    assert pts == [(5.0, 52.0), (5.15, 52.01), (5.11, 52.0), (5.2, 52.0)]
+    assert mask == [True, False, True, True]

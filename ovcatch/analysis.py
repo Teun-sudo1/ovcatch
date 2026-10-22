@@ -51,7 +51,11 @@ def metric_labels(cfg: Config) -> dict[str, str]:
 
 
 def route_points(scenario: dict) -> tuple[list[tuple[float, float]], list[bool]]:
-    """Haltes met via-punten ertussen. via['after'] = index van de halte waarna het via-punt komt."""
+    """Haltes met via-punten ertussen. via['after'] = index van de halte waarna het via-punt komt.
+
+    De route volgt één richting: haltes die alleen in de terugrichting liggen (dirs == [1]) worden
+    overgeslagen; anders rijdt de bus bijv. naar het perron aan de overkant van de snelweg.
+    """
     stops = scenario["stops"]
     vias = scenario.get("vias") or []
     by_after: dict[int, list] = {}
@@ -59,8 +63,9 @@ def route_points(scenario: dict) -> tuple[list[tuple[float, float]], list[bool]]
         by_after.setdefault(int(v["after"]), []).append(v)
     pts, mask = [], []
     for i, s in enumerate(stops):
-        pts.append((float(s["lon"]), float(s["lat"])))
-        mask.append(True)
+        if s.get("dirs") != [1]:
+            pts.append((float(s["lon"]), float(s["lat"])))
+            mask.append(True)
         for v in by_after.get(i, []):
             pts.append((float(v["lon"]), float(v["lat"])))
             mask.append(False)

@@ -220,6 +220,11 @@ class Feed:
         s0 = stops_of(main["pattern"])
         geom = self.shape_line(main["shape_id"]) or [[s["lon"], s["lat"]] for s in s0]
         logical = merge_directions(s0, stops_of(other["pattern"]) if other is not None else [], geom, merge_m)
+        # welke richting(en) een halte bedienen: 0 = heen (geometrie), 1 = terug. Haltes van één richting
+        # (bijv. perrons aan weerszijden van een snelweg) horen niet allebei in één gereden route.
+        ids = (set(main["pattern"].split("|")), set(other["pattern"].split("|")) if other is not None else set())
+        for s in logical:
+            s["dirs"] = [d for d in (0, 1) if any(m in ids[d] for m in s["members"])]
         name = " ".join(x for x in [str(rinfo["route_short_name"] or ""), str(rinfo["route_long_name"] or "")] if x).strip()
         return {
             "name": f"{name} (origineel)",

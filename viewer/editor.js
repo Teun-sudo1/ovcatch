@@ -9,6 +9,7 @@
 
   const VALHALLA = "https://valhalla1.openstreetmap.de";
   const MAX_PARALLEL = 2; // gratis server: niet te veel tegelijk
+  const MAX_LOCATIONS = 10; // limiet per routeverzoek op de openbare server
   const SNAP_M = 40;
   const STORE_KEY = "ovcatch.scenarios";
 
@@ -127,16 +128,32 @@
 
   async function route(sc) {
     const pts = [];
+    // De route volgt één richting: perrons die alleen de terugrichting bedienen (dir 1, bijv. aan de
+    // overkant van een snelweg) slaan we over, tenzij je ze zelf hebt verplaatst. radius: alle wegen
+    // binnen 25 m zijn kandidaat (haltes liggen vaak tussen twee rijbanen in).
     sc.stops.forEach((s, i) => {
-      pts.push({ lon: s.lon, lat: s.lat, type: "break" });
-      (sc.vias || []).filter((v) => v.after === i).forEach((v) => pts.push({ lon: v.lon, lat: v.lat, type: "through" }));
+      if (s.dir !== 1 || s.moved) pts.push({ lon: s.lon, lat: s.lat, type: "break", radius: 25 });
+      (sc.vias || []).filter((v) => v.after === i).forEach((v) => pts.push({ lon: v.lon, lat: v.lat, type: "through", radius: 25 }));
     });
     if (pts.length < 2) return { geometry: pts.map((p) => [p.lon, p.lat]), length_m: 0, duration_s: 0 };
-    pts[pts.length - 1].type = "break";
-    const d = await valhalla("/route", { locations: pts, costing: "bus", directions_type: "none" });
+    // De openbare server accepteert max. MAX_LOCATIONS punten per verzoek: in stukken die elk op een
+    // halte beginnen en eindigen (een via-punt mag geen begin/eind zijn), daarna aan elkaar.
+    const chunks = [];
+    for (let i = 0; i < pts.length - 1;) {
+      let j = Math.min(i + MAX_LOCATIONS - 1, pts.length - 1);
+      if (j < pts.length - 1) { let k = j; while (k > i + 1 && pts[k].type !== "break") k--; if (k > i + 1) j = k; }
+      chunks.push(pts.slice(i, j + 1).map((p, n, a) => ({ ...p, type: n === 0 || n === a.length - 1 ? "break" : p.type })));
+      i = j;
+    }
+    const parts = await Promise.all(chunks.map((locations) => valhalla("/route", { locations, costing: "bus", directions_type: "none" })));
     const geometry = [];
-    for (const leg of d.trip.legs) { const c = decodePolyline6(leg.shape); geometry.push(...(geometry.length ? c.slice(1) : c)); }
-    return { geometry, length_m: d.trip.summary.length * 1000, duration_s: d.trip.summary.time };
+    let length_m = 0, duration_s = 0;
+    for (const d of parts) {
+      for (const leg of d.trip.legs) { const c = decodePolyline6(leg.shape); geometry.push(...(geometry.length ? c.slice(1) : c)); }
+      length_m += d.trip.summary.length * 1000;
+      duration_s += d.trip.summary.time;
+    }
+    return { geometry, length_m, duration_s };
   }
 
   // ---------- vierkanten ----------
@@ -214,7 +231,8 @@
     const l = O.S.lines[li];
     return {
       name: `Lijn ${l[0]} (origineel)`, line: li,
-      stops: l[3].map((a) => ({ id: `a${a}`, name: O.S.stops[a][0], lon: O.S.stops[a][1], lat: O.S.stops[a][2], area: a })),
+      // dir: 0 = alleen heen, 1 = alleen terug, 2 = beide (oudere data zonder richting: beide)
+      stops: l[3].map((a, n) => ({ id: `a${a}`, name: O.S.stops[a][0], lon: O.S.stops[a][1], lat: O.S.stops[a][2], area: a, dir: l[6] ? l[6][n] : 2 })),
       vias: [], geometry: O.decodePolyline(l[5]), modified: false,
     };
   }
