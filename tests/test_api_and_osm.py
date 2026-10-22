@@ -49,3 +49,25 @@ def test_osm_amenities(tmp_path: Path, cfg):
     gdf = extract_amenities(cfg, f)
     assert sorted(gdf["categorie"]) == ["onderwijs", "supermarkt"]
     assert gdf.crs.to_epsg() == 28992
+
+
+def test_osm_amenities_multiple_files_dedup(tmp_path: Path, cfg):
+    """Overlappende extracten (bijv. NH + Utrecht) geven geen dubbele voorzieningen."""
+    from ovcatch.data.osm import extract_amenities
+
+    a, b = tmp_path / "a.osm", tmp_path / "b.osm"
+    a.write_text(OSM_XML)
+    b.write_text(OSM_XML.replace('<node id="6"', '<node id="7" lat="52.2" lon="5.3" version="1"><tag k="shop" v="supermarket"/></node>\n  <node id="6"'))
+    cfg["region"]["bbox_wgs84"] = [5.0, 52.0, 5.5, 52.5]
+    gdf = extract_amenities(cfg, [a, b])
+    assert sorted(gdf["osm_id"]) == ["n1", "n7", "w10"]
+
+
+def test_osm_urls_single_or_list(cfg):
+    from ovcatch.data.download import osm_urls, raw_paths
+
+    cfg["region"].pop("osm_pbf_urls", None)
+    cfg["region"]["osm_pbf_url"] = "https://x/a-latest.osm.pbf"
+    assert osm_urls(cfg) == ["https://x/a-latest.osm.pbf"]
+    cfg["region"]["osm_pbf_urls"] = ["https://x/a.osm.pbf", "https://x/b.osm.pbf"]
+    assert [p.name for p in raw_paths(cfg)["osm"]] == ["a.osm.pbf", "b.osm.pbf"]

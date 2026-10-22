@@ -50,15 +50,22 @@ def unzip_find(zip_path: Path, suffix: str, out_dir: Path) -> Path:
     return found[0]
 
 
-def raw_paths(cfg: Config) -> dict[str, Path]:
+def osm_urls(cfg: Config) -> list[str]:
+    """OSM-extract(en): `osm_pbf_urls` (lijst) of `osm_pbf_url` (enkel). Meerdere extracten
+    zijn nodig als de regio een provinciegrens overschrijdt (bijv. het Gooi: NH + Utrecht)."""
+    r = cfg["region"]
+    urls = r.get("osm_pbf_urls") or r.get("osm_pbf_url") or []
+    return [urls] if isinstance(urls, str) else list(urls)
+
+
+def raw_paths(cfg: Config) -> dict:
     raw = cfg.raw_dir
-    region = cfg["region"]["name"]
     return {
         "bag": raw / "bag-light.gpkg",
         "cbs_vk_zip": raw / "cbs_vk100.zip",
         "cbs_vk_dir": raw / "cbs_vk100",
         "cbs_buurten": raw / "cbs_buurten.gpkg",
-        "osm": raw / f"{region}.osm.pbf",
+        "osm": [raw / Path(u).name for u in osm_urls(cfg)],
         "gtfs": cfg.gtfs_dir / "gtfs-nl.zip",
     }
 
@@ -71,11 +78,12 @@ def download_all(cfg: Config, only: list[str] | None = None, force: bool = False
         "bag": (s["bag_gpkg_url"], p["bag"]),
         "cbs_vk": (s["cbs_vk100_url"], p["cbs_vk_zip"]),
         "cbs_buurten": (s["cbs_buurten_url"], p["cbs_buurten"]),
-        "osm": (cfg["region"]["osm_pbf_url"], p["osm"]),
         "gtfs": (s["gtfs_url"], p["gtfs"]),
     }
+    for url, dest in zip(osm_urls(cfg), p["osm"]):
+        jobs[f"osm:{dest.name}"] = (url, dest)
     for key, (url, dest) in jobs.items():
-        if only and key not in only:
+        if only and key.split(":")[0] not in only:
             continue
         download(url, dest, force=force)
     return p

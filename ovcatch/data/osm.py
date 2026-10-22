@@ -67,14 +67,17 @@ class _Handler(osmium.SimpleHandler):
                 self.rows.append((f"w{w.id}", cat, tag, w.tags.get("name", ""), lon, lat))
 
 
-def extract_amenities(cfg: Config, osm_file: Path) -> gpd.GeoDataFrame:
+def extract_amenities(cfg: Config, osm_files: Path | list[Path]) -> gpd.GeoDataFrame:
+    """Voorzieningen uit één of meer OSM-bestanden; dubbelen (overlappende extracten) eruit."""
     rules = _parse_tag_rules(cfg["amenities"])
     h = _Handler(rules, cfg["region"].get("bbox_wgs84"))
-    log.info("OSM-voorzieningen extraheren uit %s", osm_file)
-    h.apply_file(str(osm_file), locations=True)
+    files = [osm_files] if isinstance(osm_files, (str, Path)) else list(osm_files)
+    for f in files:
+        log.info("OSM-voorzieningen extraheren uit %s", f)
+        h.apply_file(str(f), locations=True)
     if not h.rows:
         return gpd.GeoDataFrame(columns=["osm_id", "categorie", "tag", "naam", "geometry"], geometry="geometry", crs=RD)
-    ids, cats, tags, names, lons, lats = zip(*h.rows)
+    ids, cats, tags, names, lons, lats = zip(*dict((r[0], r) for r in h.rows).values())
     gdf = gpd.GeoDataFrame(
         {"osm_id": ids, "categorie": cats, "tag": tags, "naam": names},
         geometry=gpd.points_from_xy(lons, lats),

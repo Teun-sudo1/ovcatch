@@ -82,3 +82,33 @@ def test_weight_modes(cfg, demo_world):
         out, rep, _ = disaggregate(vbo, grid, buurten, cfg)
         assert rep.pop_estimated_total > 0
     cfg["disaggregation"]["weight"] = "area"
+
+
+def test_buurten_without_woningvoorraad(cfg, demo_world):
+    """Eerste publicatie van een CBS-jaargang heeft nog geen woningvoorraad: BAG-telling als noemer."""
+    vbo_raw, grid_raw, buurten_raw, _ = demo_world
+    won_cols = [c for c in buurten_raw.columns if c.lower() in {x.lower() for x in cfg["columns"]["cbs_buurt_woningen"]}]
+    buurten = standardize_buurten(buurten_raw.drop(columns=won_cols), cfg)
+    assert buurten["woningen"].isna().all()
+    vbo, grid, _, true = _prep(cfg, demo_world)
+    out, rep, _ = disaggregate(vbo, grid, buurten, cfg)
+    assert rep.validation["share_within"] >= cfg["disaggregation"]["validation"]["min_share_within"]
+    assert (out.loc[out["is_woon"], "inwoners"] > 0).all()
+
+
+def test_validation_skips_buurten_cut_by_region(cfg, demo_world):
+    """Randbuurten (deels buiten de regio-bbox) tellen niet mee in de validatie."""
+    from ovcatch.disaggregate import validate_against_buurten
+    from ovcatch.geo import rd_to_lonlat
+
+    vbo, grid, buurten, _ = _prep(cfg, demo_world)
+    out, _, _ = disaggregate(vbo, grid, buurten, cfg)
+    assert len(validate_against_buurten(out, buurten, cfg)) == 4
+    # bbox die precies één buurt omvat
+    x0, y0, x1, y1 = buurten.geometry.iloc[0].buffer(1).bounds
+    cfg["region"]["bbox_wgs84"] = [*rd_to_lonlat(x0, y0), *rd_to_lonlat(x1, y1)]
+    try:
+        val = validate_against_buurten(out, buurten, cfg)
+    finally:
+        cfg["region"]["bbox_wgs84"] = None
+    assert val["buurtcode"].tolist() == [buurten["buurtcode"].iloc[0]]

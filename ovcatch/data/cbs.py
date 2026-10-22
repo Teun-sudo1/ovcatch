@@ -74,13 +74,19 @@ def standardize_buurten(gdf: gpd.GeoDataFrame, cfg: Config) -> gpd.GeoDataFrame:
     except KeyError:
         naam = code
     inw = pick_column(gdf.columns, c["cbs_buurt_inwoners"], "buurt inwoners")
-    won = pick_column(gdf.columns, c["cbs_buurt_woningen"], "buurt woningen")
+    # Woningvoorraad ontbreekt in de eerste publicatie van een jaargang (bijv. 2025);
+    # dan telt disaggregate() de BAG-woningen per buurt.
+    try:
+        won = pick_column(gdf.columns, c["cbs_buurt_woningen"], "buurt woningen")
+    except KeyError:
+        log.warning("CBS buurten: geen kolom woningvoorraad; BAG-woningen worden gebruikt")
+        won = None
     out = gpd.GeoDataFrame(
         {
             "buurtcode": gdf[code].astype(str).values,
             "buurtnaam": gdf[naam].astype(str).values,
             "inwoners": clean_count(gdf[inw]).values,
-            "woningen": clean_count(gdf[won]).values,
+            "woningen": clean_count(gdf[won]).values if won else np.nan,
         },
         geometry=gdf.geometry.values,
         crs=gdf.crs or RD,

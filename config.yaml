@@ -9,8 +9,11 @@ region:
   # Begrenzing in WGS84 [min_lon, min_lat, max_lon, max_lat].
   # Ontwikkelen/testen: Gooi + omgeving. Voor heel NL: zet op null.
   bbox_wgs84: [5.05, 52.17, 5.45, 52.40]
-  # OSM-extract (Geofabrik). Voor heel NL: .../europe/netherlands-latest.osm.pbf
-  osm_pbf_url: https://download.geofabrik.de/europe/netherlands/noord-holland-latest.osm.pbf
+  # OSM-extract(en) (Geofabrik). Het Gooi-bbox valt deels in Utrecht (Baarn, Soest, Eemnes),
+  # dus twee provincies. Voor heel NL: [.../europe/netherlands-latest.osm.pbf]
+  osm_pbf_urls:
+    - https://download.geofabrik.de/europe/netherlands/noord-holland-latest.osm.pbf
+    - https://download.geofabrik.de/europe/netherlands/utrecht-latest.osm.pbf
 
 sources:
   # BAG GeoPackage (PDOK, landelijk, ~7 GB). Wordt bij inlezen op region.bbox geknipt.

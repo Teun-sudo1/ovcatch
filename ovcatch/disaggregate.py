@@ -17,8 +17,10 @@ from dataclasses import dataclass, field
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import box
 
 from .config import Config
+from .geo import bbox_wgs_to_rd
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +111,7 @@ def disaggregate(
     if len(rest_idx):
         bt = buurten.set_index("buurtcode")[["inwoners", "woningen"]]
         assigned_by_buurt = vbo.loc[woon_idx].groupby("buurtcode")["inwoners"].sum()
+        bag_won = vbo.loc[woon_idx].groupby("buurtcode").size()
         rest = vbo.loc[rest_idx]
         for code, grp in rest.groupby(rest["buurtcode"].fillna("__geen__")):
             idx = grp.index
@@ -116,6 +119,8 @@ def disaggregate(
             wn = ww / ww.sum() if ww.sum() > 0 else pd.Series(1 / len(idx), index=idx)
             b_inw = bt["inwoners"].get(code, np.nan) if code != "__geen__" else np.nan
             b_won = bt["woningen"].get(code, np.nan) if code != "__geen__" else np.nan
+            if pd.isna(b_won):
+                b_won = bag_won.get(code, np.nan)
             if pd.isna(b_inw):
                 vbo.loc[idx, "inwoners"] = (len(idx) * nat * wn).values
                 vbo.loc[idx, "pop_source"] = "landelijk"
@@ -149,8 +154,15 @@ def disaggregate(
 
 
 def validate_against_buurten(vbo: pd.DataFrame, buurten: pd.DataFrame, cfg: Config, min_inw: float = 50) -> pd.DataFrame:
-    """Vergelijk som geschatte inwoners per buurt met CBS-buurttotaal."""
+    """Vergelijk som geschatte inwoners per buurt met CBS-buurttotaal.
+
+    Alleen buurten die geheel binnen de regio-bbox liggen: van randbuurten is de BAG
+    afgeknipt, dus daar is het CBS-totaal niet vergelijkbaar.
+    """
     est = vbo.groupby("buurtcode")["inwoners"].sum().rename("geschat")
+    region = bbox_wgs_to_rd(cfg["region"].get("bbox_wgs84"))
+    if region is not None:
+        buurten = buurten[buurten.geometry.within(box(*region))]
     b = buurten.set_index("buurtcode")[["buurtnaam", "inwoners"]].rename(columns={"inwoners": "cbs"})
     v = b.join(est, how="inner")
     v = v[v["cbs"].notna() & (v["cbs"] >= min_inw)]

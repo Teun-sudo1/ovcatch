@@ -15,12 +15,15 @@ Format: **keuze** — reden — (alternatief).
 - **Stap B**: woonobjecten in geheime/ontbrekende vierkanten → *rest* van het buurt-totaal (CBS buurt − al toegewezen via A). Is die rest onrealistisch (≤ 0, of per woning buiten 0,5–2× het buurtgemiddelde) → buurtgemiddelde inwoners/woning. Reden: houdt buurttotalen kloppend zonder absurde waarden bij jaargangverschillen.
 - **Stap C**: buurt ook geheim → landelijke gemiddelde huishoudensgrootte (2,1, config).
 - **Validatie** (`data/processed/validatie_buurten.csv`, `disaggregatie_rapport.json`): som per buurt vs. CBS-buurttotaal (buurten ≥ 50 inw.). Let op: door stap B is deze check deels per constructie goed; afwijkingen ontstaan vooral door jaargangverschil vierkant ↔ buurt en vierkanten zonder BAG-woning (`pop_grid_unassigned`). De onafhankelijke check zit in de tests (synthetische 'waarheid').
-- **Jaargangen**: vierkant en buurt bij voorkeur hetzelfde peiljaar. Gebruikt jaar staat in de bron-URL's in `config.yaml`.
+- **Jaargangen**: vierkant en buurt bij voorkeur hetzelfde peiljaar. Gebruikt jaar staat in de bron-URL's in `config.yaml`. Gekozen: vk100 2025 + wijkenbuurten 2025 (beide peildatum 1-1-2025).
+- **Woningvoorraad buurt optioneel** — wijkenbuurten 2025 (eerste publicatie) heeft `aantal_inwoners` maar nog geen woningvoorraad; dan is de noemer voor "inwoners per woning" (stap B) het aantal BAG-woningen in de buurt. Liever dan terugvallen op 2024: dan lopen vierkant- en buurtjaar uiteen. (Alt: `gemiddelde_huishoudsgrootte`.)
+- **Validatie alleen op buurten geheel binnen de regio-bbox** — van randbuurten is de BAG afgeknipt, dus het CBS-totaal is daar niet vergelijkbaar (Gooi: randbuurten 57% binnen ±10%, binnenbuurten 96%). Resterende afwijkingen zitten vooral in nieuwbouwwijken (BAG is actueler dan CBS 1-1-2025).
 
 ## Werk/winkel/voorzieningen
 - **m² per categorie uit BAG-gebruiksdoel**; object met meerdere doelen → oppervlakte gelijk verdeeld (bijv. woon+winkel 50/50). BAG-oppervlakte is gebruiksoppervlak (GO), niet BVO.
 - **Arbeidsplaatsen = m² ÷ ratio (config)**, overal gelabeld als *ruwe schatting*. (Alt: LISA — niet open.)
 - **OSM-voorzieningen**: nodes + ways (zwaartepunt). Multipolygon-relaties overgeslagen (klein effect in NL).
+- **Meerdere OSM-extracten** (`region.osm_pbf_urls`) — het Gooi-bbox valt deels in Utrecht (Baarn, Soest, Eemnes); NH + Utrecht samen is kleiner dan heel NL. Voorzieningen worden ontdubbeld op OSM-id; Valhalla bouwt tiles uit alle extracten.
 
 ## Bereikbaarheid
 - **Valhalla** (Docker `ghcr.io/valhalla/valhalla-scripted`): pedestrian/bicycle-isochronen met **afstandscontouren** (km); valt automatisch terug op tijdcontouren (5 km/u lopen, 15 km/u fietsen) als de server die niet kent. Bus-costing voor de lijnroute. Max. 4 contouren per verzoek → automatisch opgesplitst.

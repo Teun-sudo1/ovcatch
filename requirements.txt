@@ -11,3 +11,5 @@ fastapi>=0.110
 uvicorn>=0.29
 pyyaml>=6
 pytest>=8
+# Valhalla native (zonder Docker): valhalla_build_tiles + valhalla_service
+pyvalhalla>=3.9
