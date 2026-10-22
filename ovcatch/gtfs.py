@@ -167,7 +167,8 @@ class Feed:
             hay = (
                 r["route_short_name"].fillna("") + " " + r["route_long_name"].fillna("") + " " + r["agency_name"].fillna("").astype(str)
             ).str.lower()
-            mask = hay.str.contains(re.escape(ql), regex=True)
+            # match aan het begin van een woord: 'huizen' vindt Huizen, niet Enkhuizen
+            mask = hay.str.contains(r"(?<![^\W_])" + re.escape(ql), regex=True)
             # exacte lijnnummer-match eerst
             exact = r["route_short_name"].fillna("").str.lower() == ql
             r = pd.concat([r[exact], r[mask & ~exact]])

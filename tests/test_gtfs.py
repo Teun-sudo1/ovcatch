@@ -33,3 +33,24 @@ def test_merge_keeps_unmatched_stop_in_order():
     out = merge_directions(s0, s1, geom, 150)
     assert [s["name"] for s in out] == ["A", "B", "C"]
     assert out[0]["members"] == ["a", "a2"]
+
+
+def test_search_matches_word_start():
+    import pandas as pd
+
+    from ovcatch.gtfs import Feed
+
+    f = Feed.__new__(Feed)
+    f.routes = pd.DataFrame(
+        {
+            "route_id": ["a", "b", "c"],
+            "route_short_name": ["100", "438", "7"],
+            "route_long_name": ["Bussum - Huizen - Hilversum", "Enkhuizen - Andijk", "Paddepoel - Vinkhuizen"],
+            "agency_name": ["Transdev", "Connexxion", "Qbuzz"],
+            "route_type": [3, 3, 3],
+        }
+    )
+    f.patterns = pd.DataFrame({"route_id": ["a", "b", "c"]})
+    assert [r["route_id"] for r in f.search_routes("huizen")] == ["a"]
+    assert [r["route_id"] for r in f.search_routes("hilv")] == ["a"]
+    assert [r["route_id"] for r in f.search_routes("438")] == ["b"]
